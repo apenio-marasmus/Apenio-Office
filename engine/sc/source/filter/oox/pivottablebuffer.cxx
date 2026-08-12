@@ -154,6 +154,7 @@ const sal_uInt32 BIFF12_PTDEF_APPLYFILL             = 0x10000000;
 const sal_uInt32 BIFF12_PTDEF_APPLYPROTECTION       = 0x20000000;
 const sal_uInt32 BIFF12_PTDEF_HASTAG                = 0x40000000;
 
+const sal_uInt32 BIFF12_PTDEF_NEWDROPZONES          = 0x00000010;
 const sal_uInt32 BIFF12_PTDEF_NOERRORCAPTION        = 0x00000040;
 const sal_uInt32 BIFF12_PTDEF_NOMISSINGCAPTION      = 0x00000080;
 const sal_uInt32 BIFF12_PTDEF_HASROWHEADERCAPTION   = 0x00000400;
@@ -211,7 +212,8 @@ PTFieldModel::PTFieldModel() :
     mbInsertPageBreak( false ),
     mbAutoShow( false ),
     mbTopAutoShow( true ),
-    mbMultiPageItems( false )
+    mbMultiPageItems( false ),
+    mbFillDownLabels( false )
 {
 }
 
@@ -301,6 +303,11 @@ void PivotTableField::importPivotField( const AttributeList& rAttribs )
     maModel.mbMultiPageItems  = rAttribs.getBool( XML_multipleItemSelectionAllowed, false );
 }
 
+void PivotTableField::importPivotFieldExt( const AttributeList& rAttribs )
+{
+    maModel.mbFillDownLabels = rAttribs.getBool( XML_fillDownLabels, false );
+}
+
 void PivotTableField::importItem( const AttributeList& rAttribs )
 {
     PTFieldItemModel aModel;
@@ -359,6 +366,12 @@ void PivotTableField::importPTField( SequenceInputStream& rStrm )
     bool bAutoSort = getFlag( nFlags2, BIFF12_PTFIELD_AUTOSORT );
     bool bAscending = getFlag( nFlags2, BIFF12_PTFIELD_SORTASCENDING );
     maModel.mnSortType = bAutoSort ? (bAscending ? XML_ascending : XML_descending) : XML_manual;
+}
+
+void PivotTableField::importPTField14( SequenceInputStream& rStrm )
+{
+    rStrm.skip( 4 );    // FRT header
+    maModel.mbFillDownLabels = rStrm.readInt32() != 0;
 }
 
 void PivotTableField::importPTFItem( SequenceInputStream& rStrm )
@@ -828,6 +841,7 @@ rtl::Reference< ScDataPilotFieldObj > PivotTableField::convertRowColPageField( s
             aLayoutInfo.AddEmptyLines = maModel.mbInsertBlankRow;
             aPropSet.setProperty( PROP_LayoutInfo, aLayoutInfo );
             aPropSet.setProperty( PROP_ShowEmpty, maModel.mbShowAll );
+            aPropSet.setProperty( PROP_RepeatItemLabels, maModel.mbFillDownLabels );
 
             // auto show (OOXML/BIFF12 only)
             if( maModel.mbAutoShow )
@@ -1049,7 +1063,8 @@ PTDefinitionModel::PTDefinitionModel() :
     mbShowEmptyCol( false ),
     mbShowHeaders( true ),
     mbFieldListSortAsc( false ),
-    mbCustomListSort( true )
+    mbCustomListSort( true ),
+    mbGridDropZones( false )
 {
 }
 
@@ -1113,6 +1128,7 @@ void PivotTable::importPivotTableDefinition( const AttributeList& rAttribs )
     maDefModel.mbShowHeaders         = rAttribs.getBool( XML_showHeaders, true );
     maDefModel.mbFieldListSortAsc    = rAttribs.getBool( XML_fieldListSortAscending, false );
     maDefModel.mbCustomListSort      = rAttribs.getBool( XML_customListSort, true );
+    maDefModel.mbGridDropZones       = rAttribs.getBool( XML_gridDropZones, false );
     maDefModel.mbApplyNumFmt         = rAttribs.getBool( XML_applyNumberFormats, false );
     maDefModel.mbApplyFont           = rAttribs.getBool( XML_applyFontFormats, false );
     maDefModel.mbApplyAlignment      = rAttribs.getBool( XML_applyAlignmentFormats, false );
@@ -1240,6 +1256,7 @@ void PivotTable::importPTDefinition( SequenceInputStream& rStrm )
     maDefModel.mbShowHeaders         = !getFlag( nFlags1, BIFF12_PTDEF_HIDEHEADERS );
     maDefModel.mbFieldListSortAsc    = getFlag( nFlags3, BIFF12_PTDEF_FIELDLISTSORTASC );
     maDefModel.mbCustomListSort      = !getFlag( nFlags3, BIFF12_PTDEF_NOCUSTOMLISTSORT );
+    maDefModel.mbGridDropZones       = !getFlag( nFlags3, BIFF12_PTDEF_NEWDROPZONES );
 }
 
 void PivotTable::importPTLocation( SequenceInputStream& rStrm, sal_Int16 nSheet )
@@ -1366,6 +1383,7 @@ void PivotTable::finalizeImport()
             pSaveData->SetExpandCollapse(maDefModel.mbShowDrill);
         }
         mpDPObject->SetHideHeader(maLocationModel.mnFirstHeaderRow == 0);
+        mpDPObject->SetHeaderLayout(maDefModel.mbGridDropZones);
         // finalize all fields, this finds field names and creates grouping fields
         finalizeFieldsImport();
 

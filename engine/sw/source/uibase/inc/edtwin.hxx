@@ -58,8 +58,7 @@ class UNLESS_MERGELIBS(SAL_DLLPUBLIC_RTTI) SwEditWin final : public vcl::DocWind
 {
     static  QuickHelpData* s_pQuickHlpData;
 
-    static  tools::Long    s_nDDStartPosX;
-    static  tools::Long    s_nDDStartPosY;
+    static Point s_aDDStartPos;
 
     Color m_aWaterCanTextColor;     // text color; for the watering can
     Color m_aWaterCanTextBackColor; // text background; for the watering can
@@ -140,6 +139,9 @@ class UNLESS_MERGELIBS(SAL_DLLPUBLIC_RTTI) SwEditWin final : public vcl::DocWind
 
     void            ChangeFly( sal_uInt8 nDir, bool bWeb );
     void            ChangeDrawing( sal_uInt8 nDir );
+
+    // let a drag of the selected object start at rDocPos
+    static void ArmFrameDrag(SwWrtShell& rSh, const Point& rDocPos);
 
     bool            EnterDrawMode(const MouseEvent& rMEvt, const Point& aDocPos);
     bool            RulerColumnDrag( const MouseEvent& rMEvt, bool bVerticalMode);
@@ -249,8 +251,7 @@ public:
 
     virtual rtl::Reference<comphelper::OAccessible> CreateAccessible() override;
 
-    static tools::Long GetDDStartPosX() { return s_nDDStartPosX; }
-    static tools::Long GetDDStartPosY() { return s_nDDStartPosY; }
+    static const Point& GetDDStartPos() { return s_aDDStartPos; }
 
     static void InitStaticData();
     static void FinitStaticData();

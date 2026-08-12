@@ -15,6 +15,7 @@
 #include <comphelper/propertyvalue.hxx>
 #include <comphelper/propertysequence.hxx>
 #include <comphelper/kit.hxx>
+#include <comphelper/servicehelper.hxx>
 #include <sfx2/kit/helper.hxx>
 #include <vcl/BitmapReadAccess.hxx>
 #include <vcl/scheduler.hxx>
@@ -22,12 +23,27 @@
 
 #include <sctestviewcallback.hxx>
 #include <docuno.hxx>
+#include <document.hxx>
 #include <scmod.hxx>
+#include <sfx2/bindings.hxx>
 #include <sfx2/linkmgr.hxx>
+#include <sfx2/viewfrm.hxx>
+#include <svx/hlnkitem.hxx>
 #include <tabvwsh.hxx>
 #include <viewdata.hxx>
 #include <postit.hxx>
+#include <editeng/editobj.hxx>
 #include <editeng/editview.hxx>
+#include <comphelper/scopeguard.hxx>
+#include <editeng/editeng.hxx>
+#include <svx/svdpage.hxx>
+#include <svx/svdview.hxx>
+#include <svx/svdoutl.hxx>
+#include <svx/xfillit0.hxx>
+#include <svx/xflclit.hxx>
+#include <svtools/colorcfg.hxx>
+#include <drwlayer.hxx>
+#include <editeng/flditem.hxx>
 #include <o3tl/unit_conversion.hxx>
 #include <vcl/virdev.hxx>
 
@@ -515,6 +531,324 @@ CPPUNIT_TEST_FIXTURE(ScTiledRenderingTest, testEditTextPaintStartInTiledMode)
     // the cell, rather than staying at the output area top-left
     const Point aStartPos = pEditView->CalculateTextPaintStartPosition();
     CPPUNIT_ASSERT_EQUAL(pEditView->GetOutputArea().Left() - nVisDocLeft, aStartPos.X());
+}
+
+namespace
+{
+// A text field takes up a single character of the paragraph text.
+constexpr sal_Unicode CH_FIELD = u'\x0001';
+
+// Reads a cell back as the text it displays, with each hyperlink written out as
+// [displayed text](url), so that an assertion shows how much of the cell the link covers.
+OUString lcl_getCellTextWithLinks(ScDocument& rDocument, const ScAddress& rPosition)
+{
+    const EditTextObject* pEditText = rDocument.GetEditText(rPosition);
+    if (!pEditText)
+        return rDocument.GetString(rPosition);
+
+    OUStringBuffer aBuffer;
+    for (sal_Int32 nPara = 0; nPara < pEditText->GetParagraphCount(); ++nPara)
+    {
+        if (nPara > 0)
+            aBuffer.append('\n');
+
+        const OUString aParaText = pEditText->GetText(nPara);
+        size_t nField = 0;
+        for (sal_Int32 nIndex = 0; nIndex < aParaText.getLength(); ++nIndex)
+        {
+            if (aParaText[nIndex] != CH_FIELD)
+            {
+                aBuffer.append(aParaText[nIndex]);
+                continue;
+            }
+
+            const SvxFieldData* pField
+                = pEditText->GetFieldData(nPara, nField++, text::textfield::Type::URL);
+            auto pURLField = dynamic_cast<const SvxURLField*>(pField);
+            CPPUNIT_ASSERT(pURLField);
+            aBuffer.append("[" + pURLField->GetRepresentation() + "](" + pURLField->GetURL() + ")");
+        }
+    }
+
+    return aBuffer.makeStringAndClear();
+}
+
+// Places the caret in the text of the cell that is being edited, and selects from nStart to
+// nEnd. Clicking into the text is what puts the cell into the table input mode, so the mode is
+// set here too.
+void lcl_selectInCell(ScTabViewShell* pView, sal_Int32 nStart, sal_Int32 nEnd)
+{
+    ScModule::get()->SetInputMode(SC_INPUT_TABLE);
+
+    ScViewData& rViewData = pView->GetViewData();
+    EditView* pEditView = rViewData.GetEditView(rViewData.GetEditActivePart());
+    CPPUNIT_ASSERT(pEditView);
+    pEditView->SetSelection(ESelection(0, nStart, 0, nEnd));
+}
+
+// The text the hyperlink dialog would show in its Text entry for the current selection.
+OUString lcl_getHyperlinkDialogText(ScTabViewShell* pView)
+{
+    std::unique_ptr<SvxHyperlinkItem> pState;
+    pView->GetViewFrame().GetBindings().QueryState(SID_HYPERLINK_GETLINK, pState);
+    CPPUNIT_ASSERT(pState);
+    return pState->GetName();
+}
+
+cpo::uno::Sequence<beans::PropertyValue> lcl_hyperlinkArgs(const OUString& rText,
+                                                           const OUString& rURL)
+{
+    return {
+        comphelper::makePropertyValue(u"Hyperlink.Text"_ustr, cpo::uno::Any(rText)),
+        comphelper::makePropertyValue(u"Hyperlink.URL"_ustr, cpo::uno::Any(rURL)),
+    };
+}
+}
+
+CPPUNIT_TEST_FIXTURE(ScTiledRenderingTest, testInsertHyperlinkOverSelectionInCell)
+{
+    ScModelObj* pModelObj = createDoc("empty.ods");
+    ScTabViewShell* pView = dynamic_cast<ScTabViewShell*>(SfxViewShell::Current());
+    CPPUNIT_ASSERT(pView);
+    ScDocument* pDoc = pModelObj->GetDocument();
+
+    const ScAddress aA1(0, 0, 0);
+    typeCharsInCell("Docs and reference", aA1.Col(), aA1.Row(), pView, pModelObj, /*bInEdit*/ false,
+                    /*bCommit*/ true);
+    pView->SetCursor(aA1.Col(), aA1.Row());
+
+    // the word "reference" is selected inside the cell
+    lcl_selectInCell(pView, 9, 18);
+
+    // the dialog offers the selected text, so that confirming it keeps that word as the label
+    CPPUNIT_ASSERT_EQUAL(u"reference"_ustr, lcl_getHyperlinkDialogText(pView));
+
+    dispatchCommand(mxComponent, u".uno:SetHyperlink"_ustr,
+                    lcl_hyperlinkArgs(u"reference"_ustr, u"http://www.example.com/"_ustr));
+    ScModule::get()->InputEnterHandler();
+
+    // Only the selected word becomes the link. Without the fix the whole cell did:
+    // - Expected: Docs and [reference](http://www.example.com/)
+    // - Actual  : [Docs and reference](http://www.example.com/)
+    CPPUNIT_ASSERT_EQUAL(u"Docs and [reference](http://www.example.com/)"_ustr,
+                         lcl_getCellTextWithLinks(*pDoc, aA1));
+}
+
+CPPUNIT_TEST_FIXTURE(ScTiledRenderingTest, testInsertHyperlinkWithoutSelectionCoversWholeCell)
+{
+    ScModelObj* pModelObj = createDoc("empty.ods");
+    ScTabViewShell* pView = dynamic_cast<ScTabViewShell*>(SfxViewShell::Current());
+    CPPUNIT_ASSERT(pView);
+    ScDocument* pDoc = pModelObj->GetDocument();
+
+    const ScAddress aA1(0, 0, 0);
+    typeCharsInCell("Docs and reference", aA1.Col(), aA1.Row(), pView, pModelObj, /*bInEdit*/ false,
+                    /*bCommit*/ true);
+    pView->SetCursor(aA1.Col(), aA1.Row());
+
+    // the caret sits in the cell with nothing selected
+    lcl_selectInCell(pView, 18, 18);
+
+    // with nothing selected the dialog offers the whole cell
+    CPPUNIT_ASSERT_EQUAL(u"Docs and reference"_ustr, lcl_getHyperlinkDialogText(pView));
+
+    dispatchCommand(mxComponent, u".uno:SetHyperlink"_ustr,
+                    lcl_hyperlinkArgs(u"Docs and reference"_ustr, u"http://www.example.com/"_ustr));
+    ScModule::get()->InputEnterHandler();
+
+    // the link covers the whole cell
+    CPPUNIT_ASSERT_EQUAL(u"[Docs and reference](http://www.example.com/)"_ustr,
+                         lcl_getCellTextWithLinks(*pDoc, aA1));
+}
+
+CPPUNIT_TEST_FIXTURE(ScTiledRenderingTest, testInsertHyperlinkInOOXMLCoversWholeCell)
+{
+    // An OOXML format stores a single hyperlink per cell and no link on part of a cell's text,
+    // so a link there covers the whole cell even when only some of the text is selected.
+    ScModelObj* pModelObj = createDoc("empty.xlsx");
+    ScTabViewShell* pView = dynamic_cast<ScTabViewShell*>(SfxViewShell::Current());
+    CPPUNIT_ASSERT(pView);
+    ScDocument* pDoc = pModelObj->GetDocument();
+
+    const ScAddress aA1(0, 0, 0);
+    typeCharsInCell("Docs and reference", aA1.Col(), aA1.Row(), pView, pModelObj, /*bInEdit*/ false,
+                    /*bCommit*/ true);
+    pView->SetCursor(aA1.Col(), aA1.Row());
+
+    lcl_selectInCell(pView, 9, 18);
+
+    // the dialog offers the whole cell, not the selected word
+    CPPUNIT_ASSERT_EQUAL(u"Docs and reference"_ustr, lcl_getHyperlinkDialogText(pView));
+
+    dispatchCommand(mxComponent, u".uno:SetHyperlink"_ustr,
+                    lcl_hyperlinkArgs(u"Docs and reference"_ustr, u"http://www.example.com/"_ustr));
+    ScModule::get()->InputEnterHandler();
+
+    CPPUNIT_ASSERT_EQUAL(u"[Docs and reference](http://www.example.com/)"_ustr,
+                         lcl_getCellTextWithLinks(*pDoc, aA1));
+}
+
+CPPUNIT_TEST_FIXTURE(ScTiledRenderingTest, testInsertHyperlinkDropsTheCellsOtherLink)
+{
+    // A cell holds a single hyperlink, so linking a selection turns the link the rest of the
+    // cell carries back into plain text.
+    ScModelObj* pModelObj = createDoc("empty.ods");
+    ScTabViewShell* pView = dynamic_cast<ScTabViewShell*>(SfxViewShell::Current());
+    CPPUNIT_ASSERT(pView);
+    ScDocument* pDoc = pModelObj->GetDocument();
+
+    const ScAddress aA1(0, 0, 0);
+    typeCharsInCell("Docs and reference", aA1.Col(), aA1.Row(), pView, pModelObj, /*bInEdit*/ false,
+                    /*bCommit*/ true);
+    pView->SetCursor(aA1.Col(), aA1.Row());
+
+    // "Docs" is linked first
+    lcl_selectInCell(pView, 0, 4);
+    dispatchCommand(mxComponent, u".uno:SetHyperlink"_ustr,
+                    lcl_hyperlinkArgs(u"Docs"_ustr, u"http://www.example.com/docs"_ustr));
+
+    // "reference" is linked next. The field left by the first link takes up one character, so
+    // the word now starts at index 6.
+    lcl_selectInCell(pView, 6, 15);
+    dispatchCommand(mxComponent, u".uno:SetHyperlink"_ustr,
+                    lcl_hyperlinkArgs(u"reference"_ustr, u"http://www.example.com/reference"_ustr));
+    ScModule::get()->InputEnterHandler();
+
+    // the newer link stays and "Docs" is left as plain text
+    CPPUNIT_ASSERT_EQUAL(u"Docs and [reference](http://www.example.com/reference)"_ustr,
+                         lcl_getCellTextWithLinks(*pDoc, aA1));
+
+    // both links go away together, because they were added in one edit of the cell
+    dispatchCommand(mxComponent, u".uno:Undo"_ustr, {});
+    CPPUNIT_ASSERT_EQUAL(u"Docs and reference"_ustr, lcl_getCellTextWithLinks(*pDoc, aA1));
+}
+
+CPPUNIT_TEST_FIXTURE(ScTiledRenderingTest, testHyperlinkOverSelectionSavedToOOXML)
+{
+    // A link on part of a cell's text is what ODF stores. An OOXML format has nowhere to put
+    // it, so on the way out the link grows to cover the whole cell.
+    ScModelObj* pModelObj = createDoc("empty.ods");
+    ScTabViewShell* pView = dynamic_cast<ScTabViewShell*>(SfxViewShell::Current());
+    CPPUNIT_ASSERT(pView);
+
+    const ScAddress aA1(0, 0, 0);
+    typeCharsInCell("Docs and references", aA1.Col(), aA1.Row(), pView, pModelObj,
+                    /*bInEdit*/ false, /*bCommit*/ true);
+    pView->SetCursor(aA1.Col(), aA1.Row());
+
+    // the word "references" is selected and linked
+    lcl_selectInCell(pView, 9, 19);
+    dispatchCommand(mxComponent, u".uno:SetHyperlink"_ustr,
+                    lcl_hyperlinkArgs(u"references"_ustr, u"http://www.example.com/"_ustr));
+    ScModule::get()->InputEnterHandler();
+
+    CPPUNIT_ASSERT_EQUAL(u"Docs and [references](http://www.example.com/)"_ustr,
+                         lcl_getCellTextWithLinks(*pModelObj->GetDocument(), aA1));
+
+    saveAndReload(TestFilter::XLSX);
+
+    ScDocument* pReloadedDoc = comphelper::getFromUnoTunnel<ScModelObj>(mxComponent)->GetDocument();
+    CPPUNIT_ASSERT(pReloadedDoc);
+
+    // the whole cell carries the link now, and the text it displays is unchanged
+    CPPUNIT_ASSERT_EQUAL(u"[Docs and references](http://www.example.com/)"_ustr,
+                         lcl_getCellTextWithLinks(*pReloadedDoc, aA1));
+}
+
+// The automatic font color of a shape being edited has to be resolved against the fill of
+// that shape, not against the page background
+CPPUNIT_TEST_FIXTURE(ScTiledRenderingTest, testShapeTextEditAutoColorOnDarkPage)
+{
+    // Register a dark scheme, so that .uno:ChangeTheme "Dark" gives a dark page background
+    {
+        svtools::EditableColorConfig aColorConfig;
+        svtools::ColorConfigValue aValue;
+        aValue.bIsVisible = true;
+        aValue.nColor = Color(0x1c, 0x1c, 0x1c);
+        aColorConfig.SetColorValue(svtools::DOCCOLOR, aValue);
+        aColorConfig.AddScheme(u"Dark"_ustr);
+    }
+    ScModelObj* pModelObj = createDoc("shape.ods");
+
+    // Give the document a dark page background
+    cpo::uno::Sequence<beans::PropertyValue> aPropertyValues = comphelper::InitPropertySequence({
+        { "NewTheme", cpo::uno::Any(u"Dark"_ustr) },
+    });
+    dispatchCommand(mxComponent, u".uno:ChangeTheme"_ustr, aPropertyValues);
+
+    const ScViewData* pViewData = ScDocShell::GetViewData();
+    CPPUNIT_ASSERT(pViewData);
+    SdrPage* pDrawPage = pViewData->GetDocument().GetDrawLayer()->GetPage(0);
+    SdrObject* pObject = pDrawPage->GetObj(0);
+    CPPUNIT_ASSERT(pObject);
+
+    // Fill the shape with white
+    pObject->SetMergedItem(XFillStyleItem(drawing::FillStyle_SOLID));
+    pObject->SetMergedItem(XFillColorItem(OUString(), COL_WHITE));
+
+    SdrView* pView = pViewData->GetViewShell()->GetScDrawView();
+    pView->SdrBeginTextEdit(pObject);
+    CPPUNIT_ASSERT(pView->GetTextEditObject());
+
+    // Render, so the text edit paint path picks the background to resolve the auto color against
+    {
+        size_t nCanvasSize = 1024;
+        std::vector<unsigned char> aPixmap(nCanvasSize * nCanvasSize * 4, 0);
+        ScopedVclPtrInstance<VirtualDevice> xDevice(DeviceFormat::WITHOUT_ALPHA);
+        xDevice->SetBackground(Wallpaper(COL_TRANSPARENT));
+        xDevice->SetOutputSizePixelScaleOffsetAndKitBuffer(Size(nCanvasSize, nCanvasSize), 1.0,
+                                                           Point(), aPixmap.data());
+        pModelObj->paintTile(*xDevice, nCanvasSize, nCanvasSize, 0, 0, 15360, 7680);
+    }
+
+    // Without the accompanying fix this was COL_WHITE, i.e. white text on the white shape while
+    // the shape was edited, turning dark only once text edit ended
+    CPPUNIT_ASSERT_EQUAL(COL_BLACK, pView->GetTextEditOutliner()->GetEditEngine().GetAutoColor());
+    pView->SdrEndTextEdit();
+}
+
+// This lives apart from the other tile tests because rendering a document with a chart
+// leaves a shell of the chart behind, which upsets tests that ask for the render state
+// of the current view afterwards.
+// In dark mode a chart that has no background of its own follows the dark document
+// background, the same as the sheet around it does.
+CPPUNIT_TEST_FIXTURE(ScTiledRenderingTest, testChartBackgroundFollowsDarkMode)
+{
+    const Color aDarkColor(0x1c, 0x1c, 0x1c);
+    {
+        svtools::EditableColorConfig aColorConfig;
+        svtools::ColorConfigValue aValue;
+        aValue.bIsVisible = true;
+        aValue.nColor = aDarkColor;
+        aColorConfig.SetColorValue(svtools::DOCCOLOR, aValue);
+        aColorConfig.AddScheme(u"DarkTest"_ustr);
+    }
+
+    // The chart of this document sits at the top left corner of the sheet and is bigger than
+    // the tile rendered below, so the whole tile is chart
+    ScModelObj* pModelObj = createDoc("chart.ods");
+    ScTestViewCallback aView;
+    const OUString aOldScheme(svtools::EditableColorConfig().GetCurrentSchemeName());
+    comphelper::ScopeGuard aRestoreScheme([this, aOldScheme] {
+        dispatchCommand(
+            mxComponent, u".uno:ChangeTheme"_ustr,
+            comphelper::InitPropertySequence({ { "NewTheme", cpo::uno::Any(aOldScheme) } }));
+    });
+    dispatchCommand(
+        mxComponent, u".uno:ChangeTheme"_ustr,
+        comphelper::InitPropertySequence({ { "NewTheme", cpo::uno::Any(u"DarkTest"_ustr) } }));
+
+    // The rest of the test says nothing unless the document background really is dark now
+    const SfxViewShell* pViewShell = SfxViewShell::Current();
+    CPPUNIT_ASSERT(pViewShell);
+    CPPUNIT_ASSERT_EQUAL(aDarkColor, pViewShell->GetColorConfigColor(svtools::DOCCOLOR));
+
+    Bitmap aBitmap = getTile(pModelObj, 0, 0, 3840, 3840);
+    BitmapScopedReadAccess pAccess(aBitmap);
+
+    // Without the accompanying fix the automatic background of the chart was not resolved for
+    // the rendering view, so the chart stayed light while the sheet around it went dark
+    CPPUNIT_ASSERT_EQUAL(aDarkColor, Color(pAccess->GetPixel(5, 5)));
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

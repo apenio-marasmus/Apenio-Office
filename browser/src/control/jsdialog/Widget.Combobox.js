@@ -139,6 +139,10 @@ JSDialog.comboboxEntry = function (parentContainer, data, builder) {
 		entry.addEventListener('mouseenter', function () {
 			builder.callback('combobox', 'showsubmenu', {id: data.comboboxId}, entryData, builder);
 		});
+	} else {
+		entry.addEventListener('mouseenter', function () {
+		builder.callback('combobox', 'hideothersubmenu', {id: data.comboboxId}, entryData, builder);
+		});
 	}
 
 	return false;
@@ -320,9 +324,10 @@ JSDialog.combobox = function (parentContainer, data, builder) {
 	if (data.enabled === false) {
 		container.disabled = true;
 		content.disabled = true;
+		button.disabled = true;
 	}
 
-	JSDialog.SynchronizeDisabledState(container, [content]);
+	JSDialog.SynchronizeDisabledState(container, [content, button]);
 
 	// notebookbar a11y requires main element to have click handler for shortcuts to work
 	container.addEventListener('click', function () { content.focus(); });

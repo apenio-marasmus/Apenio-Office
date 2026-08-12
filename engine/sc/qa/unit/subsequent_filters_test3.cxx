@@ -20,10 +20,8 @@
 #include <svx/xflclit.hxx>
 #include <svx/xflgrit.hxx>
 #include <svx/xflhtit.hxx>
-#include <comphelper/servicehelper.hxx>
 #include <editeng/borderline.hxx>
 #include <editeng/lineitem.hxx>
-#include <tools/json_writer.hxx>
 #include <dbdata.hxx>
 #include <validat.hxx>
 #include <userdat.hxx>
@@ -31,7 +29,6 @@
 #include <scitems.hxx>
 #include <docsh.hxx>
 #include <cellvalue.hxx>
-#include <docuno.hxx>
 #include <attrib.hxx>
 #include <formulacell.hxx>
 #include <stlpool.hxx>
@@ -1236,7 +1233,7 @@ CPPUNIT_TEST_FIXTURE(ScFiltersTest3, testDrawCircleInMergeCells)
 
     // Change the height of the first row. (556 ~ 1cm)
     pDoc->SetRowHeight(0, 0, 556);
-    ScDrawObjData* pData = ScDrawLayer::GetObjData(pObj);
+    ScDrawObjData* pData = ScDrawLayer::GetOrCreateObjData(pObj);
     pDrawLayer->RecalcPos(pObj, *pData, false, false);
 
     tools::Rectangle aRecalcRect(pObj->GetLogicRect());

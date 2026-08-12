@@ -882,18 +882,6 @@ void SwTextFrame::dumpAsXml(xmlTextWriterPtr writer) const
         (void)xmlTextWriterWriteString( writer,
                 reinterpret_cast<const xmlChar *>(aText8.getStr(  )) );
     }
-    // The portions are gone once the line has left the text cache and nothing painted the frame
-    // since, and a line is only justified when first painted or asked for a cursor position.
-    // Restore both here, so the dump describes the same layout whatever has read it so far. Both
-    // measure, which needs the shell's output device, and a frame that is formatting right now
-    // keeps what it has: a dump is no reason to reenter the formatter.
-    if (!IsLocked() && getRootFrame()->GetCurrShell())
-    {
-        SwTextFrame* pThis = const_cast<SwTextFrame*>(this);
-        pThis->GetFormatted();
-        pThis->AdjustFormattedLines();
-    }
-
     if (const SwParaPortion* pPara = GetPara())
     {
         (void)xmlTextWriterStartElement(writer, BAD_CAST("SwParaPortion"));
@@ -3935,6 +3923,13 @@ void SwTextFrame::CalcHeightOfLastLine( const bool _bUseFont )
                 }
                 if ( pLineLayout )
                 {
+                    if (pIDSA->get(DocumentSettingId::LINE_SPACING_AS_GAP_BELOW))
+                    {
+                        // last line's line-spacing gap calculated the same as all other lines...
+                        mnHeightOfLastLine = pLineLayout->GetLineSpacingBaseHeight();
+                        return;
+                    }
+
                     SwTwips nAscent, nDescent, nDummy1, nDummy2;
                     // i#47162 - suppress consideration of
                     // fly content portions and the line portion.
@@ -3994,8 +3989,6 @@ tools::Long SwTextFrame::GetLineSpace( const bool _bNoPropLineSpace ) const
                 break;
             }
 
-            // i#11860 - adjust spacing implementation for object positioning
-            // - compatibility to MS Word
             nRet = GetHeightOfLastLine();
 
             tools::Long nTmp = nRet;

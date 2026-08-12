@@ -1937,7 +1937,9 @@ CPPUNIT_TEST_FIXTURE(ScPivotTableFiltersTest, testPivotTableBoolFieldFilterXLSX)
     ScDocument* pDoc = getScDoc();
     ScDPCollection* pDPs = pDoc->GetDPCollection();
     CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1), pDPs->GetCount());
-    CPPUNIT_ASSERT_EQUAL(u"TRUE"_ustr, pDoc->GetString(ScAddress(0, 1, 0))); //A2
+    // Classic layout, so the data field caption takes a header row above the field headers
+    CPPUNIT_ASSERT_EQUAL(u"Sum of Amount"_ustr, pDoc->GetString(ScAddress(0, 0, 0))); //A1
+    CPPUNIT_ASSERT_EQUAL(u"TRUE"_ustr, pDoc->GetString(ScAddress(0, 2, 0))); //A3
 
     // Reload and check filtering of row dimensions
     saveAndReload(TestFilter::XLSX);
@@ -2186,6 +2188,107 @@ CPPUNIT_TEST_FIXTURE(ScPivotTableFiltersTest, testPivotTableTabularModeXLSX)
     assertXPath(pTable, "/x:pivotTableDefinition", "compactData", u"0");
     assertXPath(pTable, "/x:pivotTableDefinition/x:pivotFields/x:pivotField[1]", "compact", u"0");
     assertXPath(pTable, "/x:pivotTableDefinition/x:pivotFields/x:pivotField[1]", "outline", u"0");
+}
+
+CPPUNIT_TEST_FIXTURE(ScPivotTableFiltersTest, testPivotTableRepeatItemLabelsXLSX)
+{
+    // Repeat item labels of a pivot field is an Excel 2010 extension
+    const char* const pRepeatItemLabelsXPath
+        = "/x:pivotTableDefinition/x:pivotFields/x:pivotField/x:extLst/x:ext/"
+          "x14:pivotField[@fillDownLabels='1']";
+
+    createScDoc("xlsx/pivot_outlineforms_repeat.xlsx");
+
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pFirstTable = parseExport(u"xl/pivotTables/pivotTable1.xml"_ustr);
+    xmlDocUniquePtr pSecondTable = parseExport(u"xl/pivotTables/pivotTable2.xml"_ustr);
+    CPPUNIT_ASSERT(pFirstTable);
+    CPPUNIT_ASSERT(pSecondTable);
+
+    // Only the second pivot table of the document repeats the labels, and it does so on all of
+    // its five fields. The tables can be written in any order, so check them together.
+    const int nFirst = countXPathNodes(pFirstTable, pRepeatItemLabelsXPath);
+    const int nSecond = countXPathNodes(pSecondTable, pRepeatItemLabelsXPath);
+    CPPUNIT_ASSERT_EQUAL(5, nFirst + nSecond);
+    CPPUNIT_ASSERT(nFirst == 0 || nSecond == 0);
+}
+
+CPPUNIT_TEST_FIXTURE(ScPivotTableFiltersTest, testPivotTableClassicLayoutXLSX)
+{
+    // The classic layout of MS Excel has a header row above the field headers
+    createScDoc("xlsx/pivot_outlineforms_norepeat_classic.xlsx");
+
+    ScDPCollection* pDPs = getScDoc()->GetDPCollection();
+    CPPUNIT_ASSERT_EQUAL(size_t(1), pDPs->GetCount());
+    CPPUNIT_ASSERT((*pDPs)[0].GetHeaderLayout());
+
+    // The data field caption is in the header row above, so the only data
+    // column is labelled as a total instead of repeating the caption
+    CPPUNIT_ASSERT_EQUAL(u"Sum of Accrual Value"_ustr,
+                         getScDoc()->GetString(ScAddress(0, 5, 1))); //A6
+    CPPUNIT_ASSERT_EQUAL(u"Total"_ustr, getScDoc()->GetString(ScAddress(3, 6, 1))); //D7
+
+    // The flag is written back, so the layout survives a round trip
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pTable = parseExport(u"xl/pivotTables/pivotTable1.xml"_ustr);
+    CPPUNIT_ASSERT(pTable);
+
+    assertXPath(pTable, "/x:pivotTableDefinition", "gridDropZones", u"1");
+    assertXPath(pTable, "/x:pivotTableDefinition/x:location", "firstHeaderRow", u"2");
+}
+
+CPPUNIT_TEST_FIXTURE(ScPivotTableFiltersTest, testPivotTableClassicLayoutXLSB)
+{
+    // In the binary format the classic layout is the missing drop zones flag of the definition
+    createScDoc("xlsb/pivot_outlineforms_norepeat_classic.xlsb");
+
+    ScDPCollection* pDPs = getScDoc()->GetDPCollection();
+    CPPUNIT_ASSERT_EQUAL(size_t(1), pDPs->GetCount());
+    CPPUNIT_ASSERT((*pDPs)[0].GetHeaderLayout());
+}
+
+CPPUNIT_TEST_FIXTURE(ScPivotTableFiltersTest, testPivotTableRenameUndo)
+{
+    createScDoc("xlsx/pivot_outlineforms_norepeat_classic.xlsx");
+    ScDocument* pDoc = getScDoc();
+
+    // The data field caption in the header row of the classic layout
+    const ScAddress aCaptionPos(0, 5, 1); //A6
+    CPPUNIT_ASSERT_EQUAL(u"Sum of Accrual Value"_ustr, pDoc->GetString(aCaptionPos));
+
+    // Typing into a cell of a pivot table is a renaming
+    insertStringToCell(u"$Pivot_no_repeat.A6"_ustr, u"Renamed");
+    CPPUNIT_ASSERT_EQUAL(u"Renamed"_ustr, pDoc->GetString(aCaptionPos));
+
+    // The undo action has to keep the settings from before the change, taking
+    // them from the already changed pivot table made the undo a no-op
+    dispatchCommand(mxComponent, u".uno:Undo"_ustr, {});
+    CPPUNIT_ASSERT_EQUAL(u"Sum of Accrual Value"_ustr, pDoc->GetString(aCaptionPos));
+
+    dispatchCommand(mxComponent, u".uno:Redo"_ustr, {});
+    CPPUNIT_ASSERT_EQUAL(u"Renamed"_ustr, pDoc->GetString(aCaptionPos));
+}
+
+CPPUNIT_TEST_FIXTURE(ScPivotTableFiltersTest, testPivotTableRepeatItemLabelsXLSB)
+{
+    // Repeat item labels of a pivot field is an Excel 2010 extension
+    const char* const pRepeatItemLabelsXPath
+        = "/x:pivotTableDefinition/x:pivotFields/x:pivotField/x:extLst/x:ext/"
+          "x14:pivotField[@fillDownLabels='1']";
+
+    createScDoc("xlsb/pivot_outlineforms_repeat.xlsb");
+
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pFirstTable = parseExport(u"xl/pivotTables/pivotTable1.xml"_ustr);
+    xmlDocUniquePtr pSecondTable = parseExport(u"xl/pivotTables/pivotTable2.xml"_ustr);
+    CPPUNIT_ASSERT(pFirstTable);
+    CPPUNIT_ASSERT(pSecondTable);
+
+    // In the binary format the flag comes from the PTFIELD14 record
+    const int nFirst = countXPathNodes(pFirstTable, pRepeatItemLabelsXPath);
+    const int nSecond = countXPathNodes(pSecondTable, pRepeatItemLabelsXPath);
+    CPPUNIT_ASSERT_EQUAL(5, nFirst + nSecond);
+    CPPUNIT_ASSERT(nFirst == 0 || nSecond == 0);
 }
 
 CPPUNIT_TEST_FIXTURE(ScPivotTableFiltersTest, testPivotTableDuplicateFields)
