@@ -14,7 +14,7 @@
  * from the JSON description provided by the server.
  */
 
-/* global app $ _ JSDialog ColorPicker */
+/* global app $ _ JSDialog ColorPicker DocUtil */
 
 window.L.Control.JSDialogBuilder = window.L.Control.extend({
 
@@ -560,7 +560,6 @@ window.L.Control.JSDialogBuilder = window.L.Control.extend({
 		case 'paperformat':
 		case 'orientation':
 		case 'masterslide':
-		case 'SdTableDesignPanel':
 		case 'ChartTypePanel':
 		case 'rotation':
 			iconURL = 'lc_'+ sectionTitle.id.toLowerCase() +'.svg';
@@ -1354,7 +1353,9 @@ window.L.Control.JSDialogBuilder = window.L.Control.extend({
 	},
 
 	_isStringCloseToURL : function(str) {
-		return str.indexOf('http') !== -1 || str.indexOf('data:') === 0;
+		// Assume anything with a "/" path separator or a URL scheme prefix is a URL that
+		// shall be loaded directly:
+		return str.indexOf('/') !== -1 || /^[a-z][a-z0-9+.-]*:/i.test(str);
 	},
 
 	// TODO: move to jsdialog/Widget.Toolitem.ts
@@ -2521,8 +2522,11 @@ window.L.Control.JSDialogBuilder.getMenuStructureForMobileWizard = function(menu
 		return null;
 
 	var itemText = '';
-	if (menu.name)
-		itemText = menu.name;
+	if (menu.name) {
+		// An HTML name carries markup for the desktop menu widget. The mobile
+		// wizard shows entry titles as plain text.
+		itemText = menu.isHtmlName ? DocUtil.stripHTML(menu.name) : menu.name;
+	}
 
 	var itemType = 'submenu';
 	var executionType = 'menu';

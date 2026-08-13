@@ -281,6 +281,7 @@ m4_ifelse(MOBILEAPP, [true],
       )
       data-mobile-app-name='MOBILEAPPNAME'
       data-copyright-year='_YEAR_'
+      data-enable-experimental-features='ENABLE_EXPERIMENTAL'
       data-vendor='VENDOR'
       />
       ],
@@ -308,6 +309,7 @@ m4_ifelse(MOBILEAPP, [true],
       data-frame-ancestors = "%FRAME_ANCESTORS%"
       data-geolocation-setup = "%GEOLOCATION_SETUP%"
       data-hexify-url = "%HEXIFY_URL%"
+      data-hide-legacy-script-warning = "%HIDE_LEGACY_SCRIPT_WARNING%"
       data-host = "%HOST%"
       data-idle-timeout-secs = "%IDLE_TIMEOUT_SECS%"
       data-indirection-url = "%INDIRECTION_URL%"

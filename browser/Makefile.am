@@ -348,6 +348,7 @@ COOL_JS_LST =\
 	src/docstatefunctions.js \
 	src/docdispatcher.ts \
 	src/app/TableStylesService.ts \
+	src/app/ImpressTableStylesService.ts \
 	src/core/geometry.ts \
 	src/core/TimerRegistry.ts \
 	src/core/DPIChangeListener.ts \
@@ -707,6 +708,7 @@ COOL_JS_LST =\
 	src/control/Control.Sidebar.ts \
 	src/control/Notebookbar.CalcTableTab.ts \
 	src/control/Notebookbar.ImpressAnimationTab.ts \
+	src/control/Notebookbar.ImpressTableDesignTab.ts \
 	src/control/Notebookbar.ImpressTransitionTab.ts \
 	src/control/Sidebar.FromNotebookbarPanel.ts \
 	src/control/Control.NavigatorPanel.ts \
@@ -1224,6 +1226,7 @@ $(DIST_FOLDER)/cool.html: $(srcdir)/html/cool.html.m4 \
 		-DMACOSAPP=$(ENABLE_MACOSAPP) \
 		-DQTAPP=$(ENABLE_QTAPP) \
 		-DDEBUG=$(ENABLE_DEBUG) \
+		-DENABLE_EXPERIMENTAL=$(ENABLE_EXPERIMENTAL) \
 		-DWINDOWSAPP=$(ENABLE_WINDOWSAPP) \
 		-DANDROIDAPP=$(ENABLE_ANDROIDAPP) \
 		-DEMSCRIPTENAPP=$(ENABLE_EMSCRIPTENAPP) \
@@ -1325,12 +1328,17 @@ $(DIST_FOLDER)/extensions/%: $(srcdir)/extensions/%
 
 .PHONY: install-demo-extensions
 install-demo-extensions:
+	ids= && \
 	for m in $(srcdir)/extensions/*/manifest.json; do \
 		dir=$$(dirname $$m) && \
 		id=$$(basename $$dir) && \
 		mkdir -p $(DIST_FOLDER)/extensions/$$id && \
-		cp -r $$dir/. $(DIST_FOLDER)/extensions/$$id/; \
-	done
+		cp -r $$dir/. $(DIST_FOLDER)/extensions/$$id/ && \
+		ids="$$ids$${ids:+,}\"$$id\""; \
+	done && \
+	if test "$(ENABLE_MOBILEAPP)" = true; then \
+		printf '[%s]\n' "$$ids" > $(DIST_FOLDER)/extensions/index.json; \
+	fi
 
 # tsc must compile the .js sources so TypeScript can resolve globals defined in
 # them (e.g. classes in Control.Tooltip.js referenced from .ts). This has to
@@ -1456,6 +1464,7 @@ pot:
 		src/app/IconUtil.ts \
 		src/app/LOUtil.ts \
 		src/app/TableStylesService.ts \
+		src/app/ImpressTableStylesService.ts \
 		src/canvas/sections/CommentListSection.ts \
 		src/canvas/sections/CommentSection.ts \
 		src/canvas/sections/CompareChangesLabelSection.ts \
@@ -1507,6 +1516,7 @@ pot:
 		src/control/Control.QuickFindPanel.ts \
 		src/control/Notebookbar.CalcTableTab.ts \
 		src/control/Notebookbar.ImpressAnimationTab.ts \
+		src/control/Notebookbar.ImpressTableDesignTab.ts \
 		src/control/Notebookbar.ImpressTransitionTab.ts \
 		src/control/Notebookbar.WriterReferencesTab.ts \
 		src/control/Notebookbar.WriterTableTab.ts \

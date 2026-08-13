@@ -23,6 +23,8 @@
 #include <basegfx/polygon/b2dpolypolygon.hxx>
 #include <cpo/uno/Sequence.hxx>
 #include <rtl/ref.hxx>
+#include <tools/color.hxx>
+#include <basegfx/matrix/b2dhommatrix.hxx>
 
 namespace vclcanvas
 {
@@ -43,7 +45,7 @@ struct RenderState
         subsequently transformed to device space by the view
         transform).<p>
      */
-    ::com::sun::star::geometry::AffineMatrix2D AffineTransform;
+    ::basegfx::B2DHomMatrix AffineTransform;
 
     /** The clipping area associated with this render operation.<p>
 
@@ -69,7 +71,7 @@ struct RenderState
 
         @see XGraphicDevice
      */
-    cpo::uno::Sequence<css::rendering::ColorComponent> DeviceColor;
+    std::optional<::Color> DeviceColor;
 };
 }
 

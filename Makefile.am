@@ -19,6 +19,9 @@ MAKEFLAGS := $(MAKEFLAGS) \
 	$(if $(findstring j,$(MAKEFLAGS)),,$(if $(NPROC),-j$(NPROC))) \
 	$(if $(findstring l,$(MAKEFLAGS)),,$(if $(NPROC),-l$(NPROC)))
 
+# For `make run` skip the build-time unit test execution in test/.
+export COOL_SKIP_UNITTESTS ?= $(if $(filter run,$(MAKECMDGOALS)),1,)
+
 build-samples:
 	$(QUIET_MKDIRP) mkdir -p $(abs_top_builddir)/test/samples
 	$(QUIET_SAMPLES) $(abs_top_srcdir)/scripts/build-samples.py $(abs_top_srcdir)/test/samples $(abs_top_srcdir)/test/samples
@@ -179,6 +182,7 @@ shared_sources = \
                  common/FileUtil-unix.cpp \
                  common/FileUtil.cpp \
                  common/JailUtil.cpp \
+                 common/Landlock.cpp \
                  common/Log-common.cpp \
                  common/Log-poco.cpp \
                  common/MobileApp.cpp \
@@ -374,6 +378,7 @@ shared_headers = \
                  common/HexUtil.hpp \
                  common/JailUtil.hpp \
                  common/JsonUtil.hpp \
+                 common/Landlock.hpp \
                  common/LangUtil.hpp \
                  common/Log.hpp \
                  common/Message.hpp \

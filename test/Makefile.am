@@ -95,6 +95,7 @@ all_la_unit_tests = \
 	unit-calc.la \
 	unit-rendering-options.la \
 	unit-prefork.la \
+	unit-landlock.la \
 	unit-any-input.la \
 	unit-save.la \
 	unit-wopi-saveas.la \
@@ -112,7 +113,9 @@ all_la_unit_tests = \
 	unit-wopi-httpredirect.la \
 	unit-convert-to-password-protected.la \
 	unit-bad-doc-load.la \
-	unit-hosting.la
+	unit-hosting.la \
+	unit-legacy-uno-api-warning.la \
+	unit-legacy-uno-api-warning-suppressed.la
 #	unit-admin.la
 #	unit-tilecache.la # Empty test.
 else
@@ -123,7 +126,11 @@ endif
 check_LTLIBRARIES = ${all_la_unit_tests}
 
 MAGIC_TO_FORCE_SHLIB_CREATION = -rpath /dummy
-AM_LDFLAGS = -module $(MAGIC_TO_FORCE_SHLIB_CREATION) $(ZLIB_LIBS) $(ZSTD_LIBS) ${PNG_LIBS}
+# In the server build ${PNG_LIBS} / $(ZSTD_LIBS) are the engine's static
+# liblibpng.a / libzstd.a (system shared libraries in the Flatpak and Snap
+# builds).  The static libpng pulls in zlib symbols, so it must precede
+# $(ZLIB_LIBS) on the link line for the linker to resolve them.
+AM_LDFLAGS = -module $(MAGIC_TO_FORCE_SHLIB_CREATION) ${PNG_LIBS} $(ZSTD_LIBS) $(ZLIB_LIBS)
 
 # Clang's linker doesn't like -pthread.
 if !HAVE_CLANG
@@ -248,9 +255,24 @@ common_sources = \
 
 globals_sources = ../common/Globals.cpp
 
+# The engine's static Poco no longer bundles zlib, so PocoFoundation and
+# PocoZip reference the system one and must precede it on the link line.
+# libtool moves every -l flag after the object files but keeps their relative
+# order, so the $(ZLIB_LIBS) in AM_LDFLAGS ends up ahead of the Poco libraries
+# and ld.bfd, which with --as-needed drops a libz.so that nothing needs yet at
+# that point, then has nothing left to resolve Poco's deflate/zError against.
+# Repeating $(ZLIB_LIBS) after $(POCO_LIBS) is what makes the link work.
+#
+# This deliberately stays out of AM_LDFLAGS: that is shared with the
+# check_LTLIBRARIES below, and those dlopen'ed unit-test modules take Poco from
+# the coolwsd process that loads them.  Linking a second, static copy into each
+# module would be the ODR violation that configure.ac keeps POCO_LIBS out of
+# the global LIBS to avoid.
+poco_and_zlib_libs = $(POCO_LIBS) $(ZLIB_LIBS)
+
 unithttplib_CPPFLAGS = -I$(top_srcdir) -DBUILDING_TESTS -DSTANDALONE_CPPUNIT -g
 unithttplib_SOURCES = $(common_sources) $(globals_sources) test.cpp HttpRequestTests.cpp
-unithttplib_LDADD = $(CPPUNIT_LIBS) $(POCO_LIBS)
+unithttplib_LDADD = $(CPPUNIT_LIBS) $(poco_and_zlib_libs)
 
 unittest_CPPFLAGS = -I$(top_srcdir) -DBUILDING_TESTS -DSTANDALONE_CPPUNIT -g
 unittest_SOURCES = \
@@ -267,7 +289,7 @@ unittest_SOURCES = \
 	../wsd/TileCache.cpp \
 	test.cpp
 
-unittest_LDADD = $(top_builddir)/libsimd.a $(CPPUNIT_LIBS) $(POCO_LIBS)
+unittest_LDADD = $(top_builddir)/libsimd.a $(CPPUNIT_LIBS) $(poco_and_zlib_libs)
 
 clienttest_CPPFLAGS = -I$(top_srcdir) -DBUILDING_TESTS -DSTANDALONE_CPPUNIT -g
 
@@ -280,7 +302,7 @@ clienttest_SOURCES = \
 	XcuScrubWhiteBoxTests.cpp \
 	test.cpp
 
-clienttest_LDADD = $(top_builddir)/libsimd.a $(CPPUNIT_LIBS) $(POCO_LIBS)
+clienttest_LDADD = $(top_builddir)/libsimd.a $(CPPUNIT_LIBS) $(poco_and_zlib_libs)
 
 # Add SSL dependencies if needed.
 if ENABLE_SSL
@@ -299,7 +321,7 @@ else
 
 fakesockettest_CPPFLAGS = -g
 fakesockettest_SOURCES = fakesockettest.cpp  ../net/FakeSocket.cpp ../common/DummyTraceEventEmitter.cpp ../common/Log-common.cpp ../common/Log-poco.cpp ../common/ProcUtil.cpp ../common/Util.cpp ../common/Util-server.cpp $(util_platform_cpp) ../common/Util-unix.cpp ../common/Globals.cpp
-fakesockettest_LDADD = $(CPPUNIT_LIBS) $(POCO_LIBS)
+fakesockettest_LDADD = $(CPPUNIT_LIBS) $(poco_and_zlib_libs)
 
 # old-style unit tests - bootstrapped via UnitClient
 unit_tiletest_la_SOURCES = UnitClient.cpp TileCacheTests.cpp KitPidHelpers.cpp
@@ -341,6 +363,7 @@ unit_socket_failure_la_SOURCES = UnitSocketFailure.cpp
 unit_socket_failure_la_LIBADD = $(CPPUNIT_LIBS)
 unit_prefork_la_SOURCES = UnitPrefork.cpp
 unit_prefork_la_LIBADD = $(CPPUNIT_LIBS)
+unit_landlock_la_SOURCES = UnitLandlock.cpp
 # unit_tilecache_la_SOURCES = UnitTileCache.cpp
 # unit_tilecache_la_LIBADD = $(CPPUNIT_LIBS)
 unit_oauth_la_SOURCES = UnitOAuth.cpp
@@ -415,6 +438,10 @@ unit_session_la_SOURCES = UnitSession.cpp
 unit_session_la_LIBADD = $(CPPUNIT_LIBS)
 unit_uno_command_la_SOURCES = UnitUNOCommand.cpp
 unit_uno_command_la_LIBADD = $(CPPUNIT_LIBS)
+unit_legacy_uno_api_warning_la_SOURCES = UnitLegacyUnoApiWarning.cpp
+unit_legacy_uno_api_warning_la_LIBADD = $(CPPUNIT_LIBS)
+unit_legacy_uno_api_warning_suppressed_la_SOURCES = UnitLegacyUnoApiWarningSuppressed.cpp
+unit_legacy_uno_api_warning_suppressed_la_LIBADD = $(CPPUNIT_LIBS)
 unit_load_la_SOURCES = UnitLoad.cpp
 unit_load_la_LIBADD = $(CPPUNIT_LIBS)
 unit_cursor_la_SOURCES = UnitCursor.cpp
@@ -512,16 +539,19 @@ if ENABLE_FUZZERS
 all-local:
 else
 all-local: unittest unithttplib clienttest
-	@echo
-	@echo "Running build-time unit tests.  For more thorough testing, please run 'make check'."
-	@echo "Test output is in `pwd`/test.log and is displayed on failure."
-	@echo
-	@fc-cache "@LO_PATH@"/share/fonts/truetype
-	@UNITTEST=1 ${top_builddir}/test/clienttest --cert-path ${abs_top_srcdir}/etc 2> test.log || (cat test.log && /bin/false)
-	@UNITTEST=1 ${top_builddir}/test/unittest --cert-path ${abs_top_srcdir}/etc 2> test.log || (cat test.log && /bin/false)
-	@UNITTEST=1 ${top_builddir}/test/unithttplib --cert-path ${abs_top_srcdir}/etc 2> test.log || (cat test.log && /bin/false)
-	@echo "Done test all-local"
-	@$(CLEANUP_COMMAND)
+	@if [ -n "$${COOL_SKIP_UNITTESTS}" ]; then \
+	    exit 0; \
+	fi; \
+	echo; \
+	echo "Running build-time unit tests.  For more thorough testing, please run 'make check'."; \
+	echo "Test output is in `pwd`/test.log and is displayed on failure."; \
+	echo; \
+	fc-cache "@LO_PATH@"/share/fonts/truetype; \
+	UNITTEST=1 ${top_builddir}/test/clienttest --cert-path ${abs_top_srcdir}/etc 2> test.log || { cat test.log; exit 1; }; \
+	UNITTEST=1 ${top_builddir}/test/unittest --cert-path ${abs_top_srcdir}/etc 2> test.log || { cat test.log; exit 1; }; \
+	UNITTEST=1 ${top_builddir}/test/unithttplib --cert-path ${abs_top_srcdir}/etc 2> test.log || { cat test.log; exit 1; }; \
+	echo "Done test all-local"; \
+	$(CLEANUP_COMMAND)
 endif
 
 distclean-local:

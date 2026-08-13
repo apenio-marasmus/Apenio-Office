@@ -52,11 +52,6 @@ namespace cppcanvas
                               const ::basegfx::B2DVector& rDstSize,
                               const OutDevState& );
 
-                virtual bool renderSubset( vclcanvas::Canvas& rCanvas,
-                                           const vclcanvas::ViewState& rViewState,
-                                           const ::basegfx::B2DHomMatrix& rTransformation,
-                                           const Subset&                  rSubset ) const override;
-
                 virtual sal_Int32 getActionCount() const override;
 
             private:
@@ -82,8 +77,7 @@ namespace cppcanvas
                 // Setup transformation such that the next render call is
                 // moved rPoint away.
                 const basegfx::B2DHomMatrix aLocalTransformation(basegfx::utils::createTranslateB2DHomMatrix(rDstPoint));
-                ::canvastools::appendToRenderState( maState,
-                                                      aLocalTransformation );
+                maState.AffineTransform *= aLocalTransformation;
 
                 // correct clip (which is relative to original transform)
                 cppcanvastools::modifyClip( maState,
@@ -111,7 +105,7 @@ namespace cppcanvas
                                                    rDstSize.getY() / aBmpSize.Height() );
                 const basegfx::B2DHomMatrix aLocalTransformation(basegfx::utils::createScaleTranslateB2DHomMatrix(
                     aScale, rDstPoint));
-                ::canvastools::appendToRenderState( maState, aLocalTransformation );
+                maState.AffineTransform *= aLocalTransformation;
 
                 // correct clip (which is relative to original transform)
                 cppcanvastools::modifyClip( maState,
@@ -130,27 +124,13 @@ namespace cppcanvas
                 SAL_INFO( "cppcanvas.emf", "::cppcanvas::BitmapAction: 0x" << std::hex << this );
 
                 vclcanvas::RenderState aLocalState( maState );
-                ::canvastools::prependToRenderState(aLocalState, rTransformation);
+                aLocalState.AffineTransform = rTransformation * aLocalState.AffineTransform;
 
                 rCachedPrimitive = rCanvas.drawBitmap( maBitmap,
                                                      rViewState,
                                                      aLocalState );
 
                 return true;
-            }
-
-            bool BitmapAction::renderSubset( vclcanvas::Canvas& rCanvas,
-                                             const vclcanvas::ViewState& rViewState,
-                                             const ::basegfx::B2DHomMatrix&   rTransformation,
-                                             const Subset&                    rSubset ) const
-            {
-                // bitmap only contains a single action, fail if subset
-                // requests different range
-                if( rSubset.mnSubsetBegin != 0 ||
-                    rSubset.mnSubsetEnd != 1 )
-                    return false;
-
-                return CachedPrimitiveBase::render( rCanvas, rViewState, rTransformation );
             }
 
             sal_Int32 BitmapAction::getActionCount() const

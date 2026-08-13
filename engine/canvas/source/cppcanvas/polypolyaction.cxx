@@ -57,11 +57,6 @@ namespace cppcanvas
                                 bool bStroke,
                                 int nTransparency );
 
-                virtual bool renderSubset( vclcanvas::Canvas& rCanvas,
-                                           const vclcanvas::ViewState& rViewState,
-                                           const ::basegfx::B2DHomMatrix& rTransformation,
-                                           const Subset&                  rSubset ) const override;
-
                 virtual sal_Int32 getActionCount() const override;
 
             private:
@@ -76,7 +71,7 @@ namespace cppcanvas
                 // stroke color is now implicit: the maState.DeviceColor member
                 vclcanvas::RenderState                              maState;
 
-                cpo::uno::Sequence< double >                             maFillColor;
+                std::optional<::Color>                              maFillColor;
             };
 
             PolyPolyAction::PolyPolyAction( const ::basegfx::B2DPolyPolygon&    rPolyPoly,
@@ -107,26 +102,23 @@ namespace cppcanvas
 
                 if( bFill )
                 {
-                    maFillColor = rState.fillColor;
-
-                    if( maFillColor.getLength() < 4 )
-                        maFillColor.realloc( 4 );
+                    maFillColor = rState.fillColor.value_or(COL_BLACK);
 
                     // TODO(F1): Color management
                     // adapt fill color transparency
-                    maFillColor.getArray()[3] = 1.0 - nTransparency / 100.0;
+                    maFillColor->SetAlpha(255 - (255 * nTransparency / 100.0));
                 }
 
                 if( bStroke )
                 {
-                    maState.DeviceColor = rState.lineColor;
-
-                    if( maState.DeviceColor.getLength() < 4 )
-                        maState.DeviceColor.realloc( 4 );
+                    if (rState.lineColor.has_value())
+                        maState.DeviceColor = *rState.lineColor;
+                    else
+                        maState.DeviceColor = COL_BLACK;
 
                     // TODO(F1): Color management
                     // adapt fill color transparency
-                    maState.DeviceColor.getArray()[3] = 1.0 - nTransparency / 100.0;
+                    maState.DeviceColor->SetAlpha(255 - (255 * nTransparency / 100.0));
                 }
             }
 
@@ -139,13 +131,13 @@ namespace cppcanvas
                 SAL_INFO( "cppcanvas.emf", "::cppcanvas::PolyPolyAction: 0x" << std::hex << this );
 
                 vclcanvas::RenderState aLocalState( maState );
-                ::canvastools::prependToRenderState(aLocalState, rTransformation);
+                aLocalState.AffineTransform = rTransformation * aLocalState.AffineTransform;
 
-                if( maFillColor.hasElements() )
+                if( maFillColor.has_value() )
                 {
                     // TODO(E3): Use DBO's finalizer here,
                     // fillPolyPolygon() might throw
-                    cpo::uno::Sequence<double> aTmpColor( aLocalState.DeviceColor );
+                    ::Color aTmpColor( *aLocalState.DeviceColor );
                     aLocalState.DeviceColor = maFillColor;
 
                     rCachedPrimitive = rCanvas.fillPolyPolygon( mxPolyPoly,
@@ -155,7 +147,7 @@ namespace cppcanvas
                     aLocalState.DeviceColor = std::move(aTmpColor);
                 }
 
-                if( aLocalState.DeviceColor.hasElements() )
+                if( aLocalState.DeviceColor.has_value() )
                 {
                     rCanvas.drawPolyPolygon( mxPolyPoly,
                                               rViewState,
@@ -163,23 +155,6 @@ namespace cppcanvas
                 }
 
                 return true;
-            }
-
-            bool PolyPolyAction::renderSubset( vclcanvas::Canvas& rCanvas,
-                                               const vclcanvas::ViewState& rViewState,
-                                               const ::basegfx::B2DHomMatrix& rTransformation,
-                                               const Subset&                  rSubset ) const
-            {
-                // TODO(F1): Split up poly-polygon into polygons, or even
-                // line segments, when subsets are requested.
-
-                // polygon only contains a single action, fail if subset
-                // requests different range
-                if( rSubset.mnSubsetBegin != 0 ||
-                    rSubset.mnSubsetEnd != 1 )
-                    return false;
-
-                return CachedPrimitiveBase::render( rCanvas, rViewState, rTransformation );
             }
 
             sal_Int32 PolyPolyAction::getActionCount() const
@@ -196,11 +171,6 @@ namespace cppcanvas
                 TexturedPolyPolyAction( const ::basegfx::B2DPolyPolygon& rPoly,
                                         const OutDevState&               rState,
                                         const vclcanvas::Texture&        rTexture );
-
-                virtual bool renderSubset( vclcanvas::Canvas& rCanvas,
-                                           const vclcanvas::ViewState& rViewState,
-                                           const ::basegfx::B2DHomMatrix& rTransformation,
-                                           const Subset&                  rSubset ) const override;
 
                 virtual sal_Int32 getActionCount() const override;
 
@@ -237,7 +207,7 @@ namespace cppcanvas
                 SAL_INFO( "cppcanvas.emf", "::cppcanvas::PolyPolyAction: 0x" << std::hex << this );
 
                 vclcanvas::RenderState aLocalState( maState );
-                ::canvastools::prependToRenderState(aLocalState, rTransformation);
+                aLocalState.AffineTransform = rTransformation * aLocalState.AffineTransform;
 
                 std::vector< vclcanvas::Texture > aSeq { maTexture };
 
@@ -246,23 +216,6 @@ namespace cppcanvas
                                                                   aLocalState,
                                                                   aSeq );
                 return true;
-            }
-
-            bool TexturedPolyPolyAction::renderSubset( vclcanvas::Canvas& rCanvas,
-                                                       const vclcanvas::ViewState& rViewState,
-                                                       const ::basegfx::B2DHomMatrix& rTransformation,
-                                                       const Subset&                  rSubset ) const
-            {
-                // TODO(F1): Split up poly-polygon into polygons, or even
-                // line segments, when subsets are requested.
-
-                // polygon only contains a single action, fail if subset
-                // requests different range
-                if( rSubset.mnSubsetBegin != 0 ||
-                    rSubset.mnSubsetEnd != 1 )
-                    return false;
-
-                return CachedPrimitiveBase::render( rCanvas, rViewState, rTransformation );
             }
 
             sal_Int32 TexturedPolyPolyAction::getActionCount() const
@@ -279,11 +232,6 @@ namespace cppcanvas
                 StrokedPolyPolyAction( const ::basegfx::B2DPolyPolygon&     rPoly,
                                        const OutDevState&                   rState,
                                        rendering::StrokeAttributes          aStrokeAttributes );
-
-                virtual bool renderSubset( vclcanvas::Canvas& rCanvas,
-                                           const vclcanvas::ViewState& rViewState,
-                                           const ::basegfx::B2DHomMatrix& rTransformation,
-                                           const Subset&                  rSubset ) const override;
 
                 virtual sal_Int32 getActionCount() const override;
 
@@ -319,30 +267,13 @@ namespace cppcanvas
                 SAL_INFO( "cppcanvas.emf", "::cppcanvas::PolyPolyAction: 0x" << std::hex << this );
 
                 vclcanvas::RenderState aLocalState( maState );
-                ::canvastools::prependToRenderState(aLocalState, rTransformation);
+                aLocalState.AffineTransform = rTransformation * aLocalState.AffineTransform;
 
                 rCanvas.strokePolyPolygon( mxPolyPoly,
                                             rViewState,
                                             aLocalState,
                                             maStrokeAttributes );
                 return true;
-            }
-
-            bool StrokedPolyPolyAction::renderSubset( vclcanvas::Canvas& rCanvas,
-                                                      const vclcanvas::ViewState& rViewState,
-                                                      const ::basegfx::B2DHomMatrix&  rTransformation,
-                                                      const Subset&                   rSubset ) const
-            {
-                // TODO(F1): Split up poly-polygon into polygons, or even
-                // line segments, when subsets are requested.
-
-                // polygon only contains a single action, fail if subset
-                // requests different range
-                if( rSubset.mnSubsetBegin != 0 ||
-                    rSubset.mnSubsetEnd != 1 )
-                    return false;
-
-                return CachedPrimitiveBase::render( rCanvas, rViewState, rTransformation );
             }
 
             sal_Int32 StrokedPolyPolyAction::getActionCount() const

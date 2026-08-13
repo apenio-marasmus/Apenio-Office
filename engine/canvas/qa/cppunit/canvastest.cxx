@@ -32,8 +32,6 @@ class CanvasTest : public test::BootstrapFixture
     std::unique_ptr<vclcanvas::Canvas> mCanvas;
     vclcanvas::ViewState mViewState;
     vclcanvas::RenderState mRenderState;
-    cpo::uno::Sequence<double> mColorBlack;
-    cpo::uno::Sequence<double> mColorBlue;
 
     // if enabled - check the result images with:
     // "xdg-open ./workdir/CppunitTest/canvas_test.test.core/"
@@ -58,13 +56,10 @@ public:
     virtual void setUp() override
     {
         BootstrapFixture::setUp();
-        mColorBlack = canvastools::colorToStdColorSpaceSequence(COL_BLACK);
-        mColorBlue = canvastools::colorToStdColorSpaceSequence(COL_BLUE);
         // Geometry init
-        geometry::AffineMatrix2D aUnit(1, 0, 0, 0, 1, 0);
-        mViewState.AffineTransform = aUnit;
-        mRenderState.AffineTransform = aUnit;
-        mRenderState.DeviceColor = mColorBlack;
+        mViewState.AffineTransform.identity();
+        mRenderState.AffineTransform.identity();
+        mRenderState.DeviceColor = COL_BLACK;
     }
 
     virtual void tearDown() override
@@ -104,8 +99,8 @@ public:
     {
         setupCanvas(Size(1000, 100));
         // Scale everything up by 10 (2 in render state, 5 in view state).
-        mRenderState.AffineTransform = geometry::AffineMatrix2D(2, 0, 0, 0, 2, 0);
-        mViewState.AffineTransform = geometry::AffineMatrix2D(5, 0, 0, 0, 5, 0);
+        mRenderState.AffineTransform.scale(2, 2);
+        mViewState.AffineTransform.scale(5, 5);
 
         ::basegfx::B2DPolygon aPoly;
         aPoly.append({ 10, 5 });
@@ -114,7 +109,7 @@ public:
         ::basegfx::B2DPolyPolygon aPolyPoly;
         aPolyPoly.append(aPoly);
 
-        mRenderState.DeviceColor = mColorBlue;
+        mRenderState.DeviceColor = COL_BLUE;
         rendering::StrokeAttributes strokeAttributes;
         strokeAttributes.StrokeWidth = 2.0;
         strokeAttributes.MiterLimit = 2.0; // ?

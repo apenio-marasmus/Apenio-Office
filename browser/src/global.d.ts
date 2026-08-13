@@ -235,6 +235,7 @@ interface AppInterface {
 	languages: Array<{ translated: string; neutral: string; iso: string }>;
 	favouriteLanguages: Array<string>;
 	tableStyles: TableStylesService;
+	impressTableStyles: ImpressTableStylesService;
 	colorLastSelection: any;
 	serverAudit: any;
 	events: DocEvents;
@@ -387,6 +388,7 @@ interface Window {
 	enableDebug: boolean;
 	simulateError: (name: string) => boolean;
 	enableMacrosExecution: boolean;
+	hideLegacyScriptWarning: boolean;
 	enableWelcomeMessage: boolean;
 	expectedServerId: string;
 	extraExportFormats: string[];

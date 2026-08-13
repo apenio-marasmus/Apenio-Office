@@ -53,10 +53,6 @@ namespace cppcanvas
                 virtual bool render( vclcanvas::Canvas& rCanvas,
                                      const vclcanvas::ViewState& rViewState,
                                      const ::basegfx::B2DHomMatrix& rTransformation ) const override;
-                virtual bool renderSubset( vclcanvas::Canvas& rCanvas,
-                                           const vclcanvas::ViewState& rViewState,
-                                           const ::basegfx::B2DHomMatrix& rTransformation,
-                                           const Subset&                  rSubset ) const override;
 
                 virtual sal_Int32 getActionCount() const override;
 
@@ -84,7 +80,7 @@ namespace cppcanvas
                 SAL_INFO( "cppcanvas.emf", "::cppcanvas::LineAction: 0x" << std::hex << this );
 
                 vclcanvas::RenderState aLocalState( maState );
-                ::canvastools::prependToRenderState(aLocalState, rTransformation);
+                aLocalState.AffineTransform = rTransformation * aLocalState.AffineTransform;
 
                 rCanvas.drawLine( ::basegfx::unotools::point2DFromB2DPoint(maStartPoint),
                                     ::basegfx::unotools::point2DFromB2DPoint(maEndPoint),
@@ -92,20 +88,6 @@ namespace cppcanvas
                                     aLocalState );
 
                 return true;
-            }
-
-            bool LineAction::renderSubset( vclcanvas::Canvas& rCanvas,
-                                           const vclcanvas::ViewState& rViewState,
-                                           const ::basegfx::B2DHomMatrix& rTransformation,
-                                           const Subset&                  rSubset ) const
-            {
-                // line only contains a single action, fail if subset
-                // requests different range
-                if( rSubset.mnSubsetBegin != 0 ||
-                    rSubset.mnSubsetEnd != 1 )
-                    return false;
-
-                return render( rCanvas, rViewState, rTransformation );
             }
 
             sal_Int32 LineAction::getActionCount() const

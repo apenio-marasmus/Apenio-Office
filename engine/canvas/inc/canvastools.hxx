@@ -99,31 +99,6 @@ namespace canvastools
         CANVASTOOLS_DLLPUBLIC ::vclcanvas::RenderState&
             initRenderState( ::vclcanvas::RenderState&                      renderState );
 
-        CANVASTOOLS_DLLPUBLIC ::vclcanvas::ViewState&
-            initViewState( ::vclcanvas::ViewState&                          viewState );
-
-        CANVASTOOLS_DLLPUBLIC ::basegfx::B2DHomMatrix
-            getViewStateTransform( const ::vclcanvas::ViewState&            viewState );
-
-        CANVASTOOLS_DLLPUBLIC ::vclcanvas::ViewState&
-            setViewStateTransform( ::vclcanvas::ViewState&                  viewState,
-                                   const ::basegfx::B2DHomMatrix&              transform );
-
-        CANVASTOOLS_DLLPUBLIC ::basegfx::B2DHomMatrix
-            getRenderStateTransform( const ::vclcanvas::RenderState&        renderState );
-
-        CANVASTOOLS_DLLPUBLIC ::vclcanvas::RenderState&
-            setRenderStateTransform( ::vclcanvas::RenderState&              renderState,
-                                     const ::basegfx::B2DHomMatrix&            transform );
-
-        CANVASTOOLS_DLLPUBLIC ::vclcanvas::RenderState&
-            appendToRenderState( ::vclcanvas::RenderState&                  renderState,
-                                 const ::basegfx::B2DHomMatrix&                transform );
-
-        CANVASTOOLS_DLLPUBLIC ::vclcanvas::RenderState&
-            prependToRenderState( ::vclcanvas::RenderState&                 renderState,
-                                  const ::basegfx::B2DHomMatrix&               transform );
-
         CANVASTOOLS_DLLPUBLIC ::basegfx::B2DHomMatrix&
             mergeViewAndRenderTransform( ::basegfx::B2DHomMatrix&              transform,
                                          const ::vclcanvas::ViewState&      viewState,
@@ -132,9 +107,6 @@ namespace canvastools
 
         // Matrix utilities
 
-
-        CANVASTOOLS_DLLPUBLIC css::geometry::AffineMatrix2D&
-            setIdentityAffineMatrix2D( css::geometry::AffineMatrix2D&  matrix );
 
         CANVASTOOLS_DLLPUBLIC css::geometry::Matrix2D&
             setIdentityMatrix2D( css::geometry::Matrix2D&              matrix );
@@ -377,39 +349,6 @@ namespace canvastools
         CANVASTOOLS_DLLPUBLIC void clipOutDev(const ::vclcanvas::ViewState& viewState,
                         const ::vclcanvas::RenderState& renderState,
                         OutputDevice& rOutDev);
-
-        // Color conversions (vcl/tools Color <-> canvas standard color space)
-
-        /** Create a device-specific color sequence from VCL/Tools color
-
-            Note that this method assumes a color space equivalent to
-            the one returned from createStandardColorSpace()
-         */
-        cpo::uno::Sequence< double >
-            CANVASTOOLS_DLLPUBLIC colorToStdColorSpaceSequence( const Color& rColor );
-
-        /** Convert from standard device color space to VCL/Tools color
-
-            Note that this method assumes a color space equivalent to
-            the one returned from createStandardColorSpace()
-         */
-        Color CANVASTOOLS_DLLPUBLIC stdColorSpaceSequenceToColor(
-            const cpo::uno::Sequence< double >& rColor );
-
-        /** Convert color to device color sequence
-
-            @param rColor
-            Color to convert
-         */
-        cpo::uno::Sequence< double >
-        CANVASTOOLS_DLLPUBLIC colorToDoubleSequence( const Color& rColor );
-
-        /** Convert color to device color sequence
-
-            @param rColor
-            Color sequence to convert from
-         */
-        Color CANVASTOOLS_DLLPUBLIC doubleSequenceToColor( const cpo::uno::Sequence< double >& rColor );
 
 }
 
