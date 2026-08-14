@@ -1877,9 +1877,27 @@ void Document::invalidateCanonicalId(const std::string& sessionId)
     }
     std::shared_ptr<ChildSession> session = it->second;
     CanonicalViewId newCanonicalId = _sessions.createCanonicalId(getViewProps(session));
-    if (newCanonicalId == session->getCanonicalViewId())
+    const CanonicalViewId oldCanonicalId = session->getCanonicalViewId();
+    if (newCanonicalId == oldCanonicalId)
         return;
     session->setCanonicalViewId(newCanonicalId);
+    if (!_sessions.findByCanonicalId(oldCanonicalId))
+    {
+        // Nobody holds the old id now, so requests still carrying it are this
+        // session's. Re-point ids already retired onto it, so a second change
+        // does not leave the first one's requests pointing at a dead id.
+        for (auto& [retired, current] : _retiredCanonicalIds)
+        {
+            if (current == oldCanonicalId)
+                current = newCanonicalId;
+        }
+        _retiredCanonicalIds[oldCanonicalId] = newCanonicalId;
+
+        if (_queue)
+            _queue->reassignTileQueue(oldCanonicalId, newCanonicalId);
+    }
+    // The session took this id over, so it is no longer one that was left.
+    _retiredCanonicalIds.erase(newCanonicalId);
     std::string viewRenderedState = session->getViewRenderState();
     std::string stateName;
     if (!viewRenderedState.empty())
@@ -1894,6 +1912,19 @@ void Document::invalidateCanonicalId(const std::string& sessionId)
         " canonicalid=" + std::to_string(to_underlying(newCanonicalId)) +
         " viewrenderedstate=" + stateName;
     session->sendTextFrame(message);
+}
+
+CanonicalViewId Document::resolveCanonicalViewId(CanonicalViewId id) const
+{
+    if (_sessions.findByCanonicalId(id))
+        return id;
+
+    const auto it = _retiredCanonicalIds.find(id);
+    if (it == _retiredCanonicalIds.end() || !_sessions.findByCanonicalId(it->second))
+        return id;
+
+    LOG_TRC("Canonical view id " << id << " was left behind, using " << it->second);
+    return it->second;
 }
 
 std::string Document::getViewProps(const std::shared_ptr<ChildSession>& session)
@@ -2117,6 +2148,7 @@ std::shared_ptr<COKitDocument> Document::load(const std::shared_ptr<ChildSession
     }
 
     std::string spellOnline = session->getSpellOnline();
+    const std::string formattingMarks = session->getFormattingMarks();
     if (!_loKitDocument)
     {
         // This is the first time we are loading the document
@@ -2283,11 +2315,11 @@ std::shared_ptr<COKitDocument> Document::load(const std::shared_ptr<ChildSession
 
     // Avoid logging userPrivateInfo till it's not anonymized.
     LOG_INF("Initializing for rendering session [" << sessionId << "] on document url [" <<
-            anonymizeUrl(_url) << "] with: [" << makeRenderParams(_renderOpts, userNameAnonym, spellOnline, theme, backgroundTheme, "") << "].");
+            anonymizeUrl(_url) << "] with: [" << makeRenderParams(_renderOpts, userNameAnonym, spellOnline, formattingMarks, theme, backgroundTheme, "") << "].");
 
     // initializeForRendering() should be called before
     // registerCallback(), as the previous creates a new view in Impress.
-    const std::string renderParams = makeRenderParams(_renderOpts, userName, spellOnline, theme, backgroundTheme, userPrivateInfo);
+    const std::string renderParams = makeRenderParams(_renderOpts, userName, spellOnline, formattingMarks, theme, backgroundTheme, userPrivateInfo);
 
     _loKitDocument->initializeForRendering(renderParams.c_str());
 
@@ -2445,7 +2477,8 @@ bool Document::forwardToChild(const std::string_view prefix, const std::vector<c
 }
 
 /* static */ std::string Document::makeRenderParams(const std::string& renderOpts, const std::string& userName,
-                                                    const std::string& spellOnline, const std::string& theme,
+                                                    const std::string& spellOnline,
+                                                    const std::string& formattingMarks, const std::string& theme,
                                                     const std::string& backgroundTheme,
                                                     const std::string& userPrivateInfo)
 {
@@ -2502,6 +2535,12 @@ bool Document::forwardToChild(const std::string_view prefix, const std::vector<c
     {
         const bool set = (spellOnline != "false");
         renderOptsObj->set(".uno:SpellOnline", makePropertyValue("boolean", set));
+    }
+
+    if (!formattingMarks.empty())
+    {
+        const bool set = (formattingMarks == "true");
+        renderOptsObj->set(".uno:ControlCodes", makePropertyValue("boolean", set));
     }
 
     if (!theme.empty())

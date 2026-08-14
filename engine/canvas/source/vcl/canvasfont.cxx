@@ -67,24 +67,13 @@ namespace vclcanvas
         maFont->SetEmphasisMark(eEmphasisMark);
     }
 
-    void CanvasFont::disposing(std::unique_lock<std::mutex>& rGuard)
-    {
-        rGuard.unlock();
-        {
-            SolarMutexGuard aGuard;
-
-            mxOutDev.reset();
-        }
-        rGuard.lock();
-    }
-
     rtl::Reference< vclcanvas::TextLayout >  CanvasFont::createTextLayout( const rendering::StringContext& aText, sal_Int8 nDirection, sal_Int64 )
     {
         SolarMutexGuard aGuard;
 
         return new TextLayout( aText,
                                nDirection,
-                               Reference( this ),
+                               this,
                                mxOutDev);
     }
 

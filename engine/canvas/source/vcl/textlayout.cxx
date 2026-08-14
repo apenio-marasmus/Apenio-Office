@@ -76,23 +76,14 @@ namespace vclcanvas
 
     TextLayout::TextLayout( rendering::StringContext                   aText,
                             sal_Int8                                   nDirection,
-                            CanvasFont::Reference                      rFont,
+                            rtl::Reference<CanvasFont>                 rFont,
                             const VclPtr<OutputDevice>&                xOutDev ) :
         maText(std::move( aText )),
         mpFont(std::move( rFont )),
         mxOutDev( xOutDev ),
         mnTextDirection( nDirection )
-    {}
-
-    void TextLayout::disposing(std::unique_lock<std::mutex>& rGuard)
     {
-        rGuard.unlock();
-        {
-            SolarMutexGuard aGuard;
-            mxOutDev.reset();
-            mpFont.clear();
-        }
-        rGuard.lock();
+        assert(mxOutDev);
     }
 
     // XTextLayout
@@ -134,9 +125,6 @@ namespace vclcanvas
     geometry::RealRectangle2D TextLayout::queryTextBounds(  )
     {
         SolarMutexGuard aGuard;
-
-        if( !mxOutDev )
-            return geometry::RealRectangle2D();
 
         OutputDevice& rOutDev = *mxOutDev;
 
