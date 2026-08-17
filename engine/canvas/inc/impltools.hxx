@@ -66,20 +66,6 @@ namespace vclcanvastools
         bool isRectangle( const ::tools::PolyPolygon& rPolyPoly );
 
 
-        // Little helper to encapsulate locking into policy class
-        class LocalGuard
-        {
-        public:
-            /// To be compatible with CanvasBase mutex concept
-            explicit LocalGuard( const ::osl::Mutex& ) :
-                aSolarGuard()
-            {
-            }
-
-        private:
-            SolarMutexGuard aSolarGuard;
-        };
-
         class OutDevStateKeeper
         {
         public:
@@ -106,9 +92,9 @@ namespace vclcanvastools
             const AntialiasingFlags mnAntiAliasing;
         };
 
-        ::Point mapRealPoint2D( const css::geometry::RealPoint2D&  rPoint,
-                                const ::vclcanvas::ViewState&   rViewState,
-                                const ::vclcanvas::RenderState& rRenderState );
+        ::Point mapB2DPoint( const ::basegfx::B2DPoint&  rPoint,
+                             const ::vclcanvas::ViewState&   rViewState,
+                             const ::vclcanvas::RenderState& rRenderState );
 
         ::tools::PolyPolygon mapPolyPolygon( const ::basegfx::B2DPolyPolygon&                          rPoly,
                                       const ::vclcanvas::ViewState&     rViewState,
@@ -117,7 +103,6 @@ namespace vclcanvastools
         ::Bitmap transformBitmap( const ::Bitmap&                                   rBitmap,
                                   const ::basegfx::B2DHomMatrix&                    rTransform );
 
-        void SetDefaultDeviceAntiAliasing( OutputDevice* pDevice );
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

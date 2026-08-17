@@ -28,9 +28,7 @@
 #include <com/sun/star/rendering/StringContext.hpp>
 
 #include <vcl/font.hxx>
-
-#include "vclwrapper.hxx"
-
+#include <vcl/svapp.hxx>
 
 /* Definition of CanvasFont class */
 
@@ -75,17 +73,12 @@ namespace vclcanvas
         */
         rtl::Reference< vclcanvas::TextLayout > createTextLayout( const css::rendering::StringContext& aText, sal_Int8 nDirection, sal_Int64 nRandomSeed );
 
-        /** Query the FontRequest that was used to generate this object.
-         */
-        css::rendering::FontRequest getFontRequest(  );
-
         vcl::Font const & getVCLFont() const;
       
         const css::geometry::Matrix2D& getFontMatrix() const;
 
     private:
-        ::canvas::vcltools::VCLObject<vcl::Font>                          maFont;
-        css::rendering::FontRequest                                       maFontRequest;
+        vcl::Font                                                         maFont;
         VclPtr<OutputDevice>                                              mxOutDev;
         css::geometry::Matrix2D                                           maFontMatrix;
     };

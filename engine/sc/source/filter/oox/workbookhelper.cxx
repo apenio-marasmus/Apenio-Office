@@ -371,7 +371,6 @@ namespace {
 
 WorkbookHelper::RangeDataRet lcl_addNewByName(ScDocument& rDoc, ScRangeName& rNames, const OUString& rName, sal_Int16 nIndex, sal_Int32 nUnoType)
 {
-    bool bDone = false;
     ScRangeData::Type nNewType = ScRangeData::Type::Name;
     if ( nUnoType & NamedRangeFlag::FILTER_CRITERIA )    nNewType |= ScRangeData::Type::Criteria;
     if ( nUnoType & NamedRangeFlag::PRINT_AREA )         nNewType |= ScRangeData::Type::PrintArea;
@@ -379,7 +378,7 @@ WorkbookHelper::RangeDataRet lcl_addNewByName(ScDocument& rDoc, ScRangeName& rNa
     if ( nUnoType & NamedRangeFlag::ROW_HEADER )         nNewType |= ScRangeData::Type::RowHeader;
     if ( nUnoType & NamedRangeFlag::HIDDEN )             nNewType |= ScRangeData::Type::Hidden;
     ScTokenArray aTokenArray(rDoc);
-    ScRangeData* pNew = new ScRangeData(rDoc, rName, aTokenArray, ScAddress(), nNewType);
+    std::unique_ptr<ScRangeData> pNew(new ScRangeData(rDoc, rName, aTokenArray, ScAddress(), nNewType));
     pNew->GuessPosition();
     if ( nIndex )
         pNew->SetIndex( nIndex );
@@ -387,16 +386,12 @@ WorkbookHelper::RangeDataRet lcl_addNewByName(ScDocument& rDoc, ScRangeName& rNa
     if (((nUnoType & NamedRangeFlag::HIDDEN) == NamedRangeFlag::HIDDEN)
         && ((nUnoType & NamedRangeFlag::FILTER_CRITERIA) == NamedRangeFlag::FILTER_CRITERIA))
     {
-        return WorkbookHelper::RangeDataRet(pNew, true);
+        return WorkbookHelper::RangeDataRet(pNew.release(), true);
     }
-    if ( rNames.insert(pNew) )
-        bDone = true;
-    if (!bDone)
-    {
-        delete pNew;
+    ScRangeData* pInserted = rNames.insert(std::move(pNew));
+    if (!pInserted)
         throw RuntimeException();
-    }
-    return WorkbookHelper::RangeDataRet(pNew, false);
+    return WorkbookHelper::RangeDataRet(pInserted, false);
 }
 
 OUString findUnusedName( const ScRangeName& rRangeName, const OUString& rSuggestedName )

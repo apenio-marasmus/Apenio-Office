@@ -145,11 +145,11 @@ using namespace vclcanvas;
         // VCL-Canvas related
 
 
-        ::Point mapRealPoint2D( const geometry::RealPoint2D&    rPoint,
-                                const vclcanvas::ViewState&     rViewState,
-                                const vclcanvas::RenderState&   rRenderState )
+        ::Point mapB2DPoint( const ::basegfx::B2DPoint&    rPoint,
+                             const vclcanvas::ViewState&     rViewState,
+                             const vclcanvas::RenderState&   rRenderState )
         {
-            ::basegfx::B2DPoint aPoint( ::basegfx::unotools::b2DPointFromRealPoint2D(rPoint) );
+            ::basegfx::B2DPoint aPoint( rPoint );
 
             ::basegfx::B2DHomMatrix aMatrix;
             aPoint *= ::canvastools::mergeViewAndRenderTransform(aMatrix,
@@ -204,22 +204,6 @@ using namespace vclcanvas;
                                                         rTransform );
 
             return vcl::bitmap::CanvasTransformBitmap(rBitmap, rTransform, aDestRect, aLocalTransform);
-        }
-
-        void SetDefaultDeviceAntiAliasing( OutputDevice* pDevice )
-        {
-#if defined( MACOSX )
-            // use AA on VCLCanvas for Mac
-            pDevice->SetAntialiasing( AntialiasingFlags::Enable | pDevice->GetAntialiasing() );
-#else
-            // switch off AA for WIN32 and UNIX, the VCLCanvas does not look good with it and
-            // is not required to do AA. It would need to be adapted to use it correctly
-            // (especially gradient painting). This will need extra work.
-            if( SkiaHelper::isVCLSkiaEnabled()) // But Skia handles AA fine.
-                pDevice->SetAntialiasing( AntialiasingFlags::Enable | pDevice->GetAntialiasing() );
-            else
-                pDevice->SetAntialiasing(pDevice->GetAntialiasing() & ~AntialiasingFlags::Enable);
-#endif
         }
 
 }

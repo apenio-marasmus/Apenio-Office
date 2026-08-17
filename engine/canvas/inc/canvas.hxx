@@ -57,11 +57,7 @@ namespace vclcanvas
         /// For resource tracking
         VCLCANVAS_DLLPUBLIC ~Canvas();
 
-        basegfx::B2DPolyPolygon createCompatibleLinePolyPolygon( const cpo::uno::Sequence< cpo::uno::Sequence< css::geometry::RealPoint2D > >& points );
-
         rtl::Reference< ::canvas::ParametricPolyPolygon > createParametricPolyPolygon( std::u16string_view GradientService, const std::vector<::Color>& colors, const ::cpo::uno::Sequence< double >& stops, double aspectRatio );
-
-        void clear();
 
         void drawPoint(const css::geometry::RealPoint2D&     aPoint,
                                         const ::vclcanvas::ViewState&      viewState,
@@ -78,8 +74,8 @@ namespace vclcanvas
                               const ::Size&                                 rSz,
                               const GraphicAttr&                            rAttr ) const;
 
-        VCLCANVAS_DLLPUBLIC void drawLine(const css::geometry::RealPoint2D&  aStartPoint,
-                                       const css::geometry::RealPoint2D&  aEndPoint,
+        VCLCANVAS_DLLPUBLIC void drawLine(const ::basegfx::B2DPoint&  aStartPoint,
+                                       const ::basegfx::B2DPoint&  aEndPoint,
                                        const ::vclcanvas::ViewState&   viewState,
                                        const ::vclcanvas::RenderState& renderState);
 
@@ -116,13 +112,6 @@ namespace vclcanvas
                         const css::geometry::Matrix2D&                                         fontMatrix );
 
         void
-            drawText(const css::rendering::StringContext&                                     text,
-                     const rtl::Reference< vclcanvas::CanvasFont >&                xFont,
-                     const ::vclcanvas::ViewState&                                         viewState,
-                     const ::vclcanvas::RenderState&                                       renderState,
-                     sal_Int8                                                                 textDirection);
-
-        void
             drawTextLayout(const rtl::Reference< vclcanvas::TextLayout >&               laidOutText,
                             const ::vclcanvas::ViewState&                                       viewState,
                             const ::vclcanvas::RenderState&                                     renderState);
@@ -155,9 +144,6 @@ namespace vclcanvas
                               const ::vclcanvas::RenderState&                                       renderState,
                               const rtl::Reference< vclcanvas::CanvasFont >&   xFont ) const;
 
-        css::geometry::IntegerSize2D getSize(  );
-
-        mutable osl::Mutex m_aMutex;
         /// For retrieving device info
         VclPtr<OutputDevice> mxOutDev;
     };

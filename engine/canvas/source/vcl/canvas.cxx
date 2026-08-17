@@ -98,8 +98,6 @@ namespace vclcanvas
 
     Canvas::Canvas( OutputDevice& rOutDev )
     {
-        SolarMutexGuard aGuard;
-
         SAL_INFO("canvas.vcl", "vclcanvas::Canvas() called" );
 
         mxOutDev = &rOutDev;
@@ -118,8 +116,6 @@ namespace vclcanvas
                           const ::Size&                 rSz,
                           const GraphicAttr&            rAttr ) const
     {
-        SolarMutexGuard aGuard;
-
         ENSURE_OR_RETURN_FALSE( rGrf,
                           "Invalid Graphic" );
 
@@ -132,47 +128,20 @@ namespace vclcanvas
         return true;
     }
 
-    basegfx::B2DPolyPolygon Canvas::createCompatibleLinePolyPolygon( const cpo::uno::Sequence< cpo::uno::Sequence< css::geometry::RealPoint2D > >& points )
-    {
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
-
-        // vcl only handles even_odd polygons
-        return ::basegfx::unotools::polyPolygonFromPoint2DSequenceSequence( points );
-    }
-
-    void Canvas::clear()
-    {
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
-
-        OutputDevice& rOutDev( *mxOutDev );
-        vclcanvastools::OutDevStateKeeper aStateKeeper( rOutDev );
-
-        rOutDev.EnableMapMode( false );
-        rOutDev.SetAntialiasing( AntialiasingFlags::Enable );
-        rOutDev.SetLineColor( COL_WHITE );
-        rOutDev.SetFillColor( COL_WHITE );
-        rOutDev.SetClipRegion();
-        rOutDev.DrawRect( ::tools::Rectangle( Point(),
-                                     rOutDev.GetOutputSizePixel()) );
-    }
-
-    void Canvas::drawLine(const css::geometry::RealPoint2D&  aStartRealPoint2D,
-                                   const css::geometry::RealPoint2D&  aEndRealPoint2D,
+    void Canvas::drawLine(const ::basegfx::B2DPoint&  rStartPoint2D,
+                                   const ::basegfx::B2DPoint&  rEndPoint2D,
                                    const ::vclcanvas::ViewState&   viewState,
                                    const ::vclcanvas::RenderState& renderState)
     {
-        canvastools::verifyArgs(aStartRealPoint2D, aEndRealPoint2D, viewState, renderState,
+        canvastools::verifyArgs(rStartPoint2D, rEndPoint2D, viewState, renderState,
                           __func__);
 
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
-
-        // nope, render
         vclcanvastools::OutDevStateKeeper aStateKeeper( *mxOutDev );
         setupOutDevState( viewState, renderState, LINE_COLOR );
 
-        const Point aStartPoint( vclcanvastools::mapRealPoint2D( aStartRealPoint2D,
+        const Point aStartPoint( vclcanvastools::mapB2DPoint( rStartPoint2D,
                                                         viewState, renderState ) );
-        const Point aEndPoint( vclcanvastools::mapRealPoint2D( aEndRealPoint2D,
+        const Point aEndPoint( vclcanvastools::mapB2DPoint( rEndPoint2D,
                                                       viewState, renderState ) );
         // TODO(F2): alpha
         mxOutDev->DrawLine( aStartPoint, aEndPoint );
@@ -183,8 +152,6 @@ namespace vclcanvas
                     const ::vclcanvas::ViewState&                                   viewState,
                     const ::vclcanvas::RenderState&                                 renderState )
     {
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
-
         return implDrawBitmap( rBitmap,
                                viewState,
                                renderState,
@@ -209,8 +176,6 @@ namespace vclcanvas
     {
         canvastools::verifyArgs(xPolyPolygon, viewState, renderState, strokeAttributes,
                           __func__);
-
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
 
         ENSURE_ARG_OR_THROW( xPolyPolygon.count(),
                          "polygon is NULL");
@@ -323,8 +288,6 @@ namespace vclcanvas
         canvastools::verifyArgs(xPolyPolygon, viewState, renderState,
                           __func__);
 
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
-
         ENSURE_ARG_OR_THROW( xPolyPolygon.count(),
                          "polygon is NULL");
 
@@ -361,62 +324,8 @@ namespace vclcanvas
                           fontMatrix,
                           __func__);
 
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
-
         // TODO(F2): font properties and font matrix
         return new CanvasFont(fontRequest, eMark, fontMatrix, *mxOutDev);
-    }
-
-
-    void
-        Canvas::drawText(const css::rendering::StringContext&                                     text,
-                 const rtl::Reference< vclcanvas::CanvasFont >&                xFont,
-                 const ::vclcanvas::ViewState&                                         viewState,
-                 const ::vclcanvas::RenderState&                                       renderState,
-                 sal_Int8                                                                 textDirection)
-    {
-        canvastools::verifyArgs(xFont, viewState, renderState,
-                          __func__);
-        canvastools::verifyRange( textDirection,
-                            css::rendering::TextDirection::WEAK_LEFT_TO_RIGHT,
-                            css::rendering::TextDirection::STRONG_RIGHT_TO_LEFT );
-
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
-
-        ENSURE_ARG_OR_THROW( xFont.is(),
-                         "font is NULL");
-
-        vclcanvastools::OutDevStateKeeper aStateKeeper( *mxOutDev );
-
-        ::Point aOutpos;
-        if( !setupTextOutput( aOutpos, viewState, renderState, xFont ) )
-            return; // no output necessary
-
-        // change text direction and layout mode
-        vcl::text::ComplexTextLayoutFlags nLayoutMode(vcl::text::ComplexTextLayoutFlags::Default);
-        switch( textDirection )
-        {
-            case rendering::TextDirection::WEAK_LEFT_TO_RIGHT:
-            case rendering::TextDirection::STRONG_LEFT_TO_RIGHT:
-                nLayoutMode |= vcl::text::ComplexTextLayoutFlags::BiDiStrong;
-                nLayoutMode |= vcl::text::ComplexTextLayoutFlags::TextOriginLeft;
-                break;
-
-            case rendering::TextDirection::WEAK_RIGHT_TO_LEFT:
-                nLayoutMode |= vcl::text::ComplexTextLayoutFlags::BiDiRtl;
-                [[fallthrough]];
-            case rendering::TextDirection::STRONG_RIGHT_TO_LEFT:
-                nLayoutMode |= vcl::text::ComplexTextLayoutFlags::BiDiRtl | vcl::text::ComplexTextLayoutFlags::BiDiStrong;
-                nLayoutMode |= vcl::text::ComplexTextLayoutFlags::TextOriginRight;
-                break;
-        }
-
-        // TODO(F2): alpha
-        mxOutDev->SetLayoutMode( nLayoutMode );
-        mxOutDev->DrawText( aOutpos,
-                            text.Text,
-                            ::canvastools::numeric_cast<sal_uInt16>(text.StartPosition),
-                            ::canvastools::numeric_cast<sal_uInt16>(text.Length) );
     }
 
 
@@ -427,8 +336,6 @@ namespace vclcanvas
     {
         canvastools::verifyArgs(xLayoutedText, viewState, renderState,
                           __func__);
-
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
 
         ENSURE_ARG_OR_THROW( xLayoutedText.is(),
                          "layout is NULL");
@@ -456,8 +363,6 @@ namespace vclcanvas
     {
         canvastools::verifyArgs(xPolyPolygon, viewState, renderState,
                           __func__);
-
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
 
         ENSURE_ARG_OR_THROW( xPolyPolygon.count(),
                          "polygon is NULL");
@@ -489,13 +394,6 @@ namespace vclcanvas
         }
     }
 
-
-    css::geometry::IntegerSize2D Canvas::getSize(  )
-    {
-        vclcanvastools::LocalGuard aGuard( m_aMutex );
-
-        return vcl::unotools::integerSize2DFromSize( mxOutDev->GetOutputSizePixel() );
-    }
 
     int Canvas::setupOutDevState( const vclcanvas::ViewState&     viewState,
                                         const vclcanvas::RenderState&   renderState,
