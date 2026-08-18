@@ -1203,6 +1203,10 @@ input, button {
 	background: var(--color-main-background) !important;
 }
 
+.iframe-settings-wrap.jsdialog-container.ui-dialog.lokdialog_container.ui-widget-content {
+	background: var(--settings-background, var(--color-main-background)) !important;
+}
+
 .lokdialog.ui-dialog-content.ui-widget-content {
 	overflow: auto;
 	border-top-left-radius: 0px;
@@ -1709,6 +1713,14 @@ body.slideshow-presenting-in-window .jsdialog-window.modalpopup {
 #debug-panel label { display: block; cursor: pointer; padding: 1px 0; }
 #debug-panel input[type='checkbox'] { margin-right: 5px; }
 #debug-panel .debug-panel-number { width: 5.5em; margin-left: 5px; font: inherit; }
+
+/* the debug tile preload map, drawn above the document canvas it is a
+   sibling of, and transparent to input */
+#preload-map {
+	position: absolute;
+	z-index: 1;
+	pointer-events: none;
+}
 
 /* the bar saying that a small screen is not fully accessible */
 .accessibility-notice {

@@ -303,7 +303,7 @@ namespace desktop {
         bool saveAs(const char* pUrl, const char* pFormat, const char* pFilterOptions) override;
         COKitDocumentType getDocumentType() override;
         int getParts() override;
-        char* getPartPageRectangles() override;
+        std::string getWriterPageRectangles() override;
         int getPart() override;
         void setPart(int nPart) override;
         char* getPartName(int nPart) override;
@@ -321,7 +321,7 @@ namespace desktop {
         void postUnoCommand(const char* pCommand, const char* pArguments,
                             bool bNotifyWhenFinished) override;
         void setTextSelection(COKitSetTextSelectionType eType, int nX, int nY) override;
-        char* getTextSelection(const char* pMimeType, char** pUsedMimeType) override;
+        std::string getTextSelection(std::string_view pMimeType, std::string* pUsedMimeType) override;
         bool paste(const char* pMimeType, const char* pData, size_t nSize) override;
         void setGraphicSelection(COKitSetGraphicSelectionType eType, int nX, int nY) override;
         void resetSelection() override;
@@ -438,7 +438,6 @@ namespace desktop {
         std::string getError() override;
         COKitDocument* documentLoadWithOptions(const char* pURL, const char* pOptions) override;
         void registerCallback(COKitCallback pCallback, void* pData) override;
-        char* getFilterTypes() override;
         void setOptionalFeatures(COKitOptionalFeatures features) override;
         void setDocumentPassword(char const* pURL, char const* pPassword) override;
         char* getVersionInfo() override;

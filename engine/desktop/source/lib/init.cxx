@@ -1229,9 +1229,9 @@ static void doc_setTextSelection (COKitDocument* pThis,
                                   COKitSetTextSelectionType eType,
                                   int nX,
                                   int nY);
-static char* doc_getTextSelection(COKitDocument* pThis,
-                                  const char* pMimeType,
-                                  char** pUsedMimeType);
+static std::string doc_getTextSelection(COKitDocument* pThis,
+                                  std::string_view pMimeType,
+                                  std::string* pUsedMimeType);
 static COKitSelectionType doc_getSelectionType(COKitDocument* pThis);
 static COKitSelectionType doc_getSelectionTypeAndText(COKitDocument* pThis,
                                                       const char* pMimeType,
@@ -1607,7 +1607,7 @@ void COKitDocumentImpl::setTextSelection(COKitSetTextSelectionType eType, int nX
     doc_setTextSelection(this, eType, nX, nY);
 }
 
-char* COKitDocumentImpl::getTextSelection(const char* pMimeType, char** pUsedMimeType)
+std::string COKitDocumentImpl::getTextSelection(std::string_view pMimeType, std::string* pUsedMimeType)
 {
     return doc_getTextSelection(this, pMimeType, pUsedMimeType);
 }
@@ -3176,7 +3176,6 @@ static COKitDocument* lo_documentLoadWithOptions  (COKit* pThis,
 static void                    lo_registerCallback (COKit* pThis,
                                                     COKitCallback pCallback,
                                                     void* pData);
-static char* lo_getFilterTypes(COKit* pThis);
 static void                    lo_setOptionalFeatures(COKit* pThis, COKitOptionalFeatures features);
 static void                    lo_setDocumentPassword(COKit* pThis,
                                                        const char* pURL,
@@ -3277,11 +3276,6 @@ COKitDocument* COKitImpl::documentLoadWithOptions(const char* pURL, const char* 
 void COKitImpl::registerCallback(COKitCallback pCallback, void* pData)
 {
     lo_registerCallback(this, pCallback, pData);
-}
-
-char* COKitImpl::getFilterTypes()
-{
-    return lo_getFilterTypes(this);
 }
 
 void COKitImpl::setOptionalFeatures(COKitOptionalFeatures features)
@@ -3720,6 +3714,31 @@ static COKitDocument* lo_documentLoadWithOptions(COKit* pThis, const char* pURL,
 
         COKitDocumentImpl* pDocument = new COKitDocumentImpl(xComponent, nThisDocumentId);
         pDocument->maOriginalDocumentUrlKey = aOriginalDocumentUrlKey;
+
+        // Type detection can resolve a load to a template-format filter for a
+        // file whose own name does not have one of that filter's extensions,
+        // for example when the file at aURL is a .potx or .dotx saved under
+        // a .pptx or .docx name (online does this when a document is created
+        // from a template). Leaving the document tied to that filter would
+        // make a later plain save write out content whose declared type
+        // disagrees with the file's own extension. Retarget the document's
+        // own storage to the matching non-template filter for aURL now, so
+        // a later save is consistent with the file's name from the start.
+        if (SfxBaseModel* pLoadedModel = dynamic_cast<SfxBaseModel*>(xComponent.get()))
+        {
+            if (SfxObjectShell* pLoadedShell = pLoadedModel->GetObjectShell())
+            {
+                SfxMedium* pLoadedMedium = pLoadedShell->GetMedium();
+                std::shared_ptr<const SfxFilter> pLoadedFilter
+                    = pLoadedMedium ? pLoadedMedium->GetFilter() : nullptr;
+                if (pLoadedFilter && pLoadedFilter->IsOwnTemplateFormat()
+                    && !pLoadedFilter->GetWildcard().Matches(aURL))
+                {
+                    OString aURLUtf8 = OUStringToOString(aURL, RTL_TEXTENCODING_UTF8);
+                    doc_saveAs(pDocument, aURLUtf8.getStr(), nullptr, "TakeOwnership,FromTemplate");
+                }
+            }
+        }
 
         // After loading the document, its initial view is the "current" view.
         if (pLib->mpCallback)
@@ -4920,9 +4939,9 @@ void COKitDocumentImpl::moveSelectedParts(int nPosition, bool bDuplicate, int nI
     pDoc->moveSelectedParts(nPosition, bDuplicate, nIntoSection);
 }
 
-char* COKitDocumentImpl::getPartPageRectangles()
+std::string COKitDocumentImpl::getWriterPageRectangles()
 {
-    comphelper::ProfileZone aZone("COKitDocumentImpl::getPartPageRectangles");
+    comphelper::ProfileZone aZone("COKitDocumentImpl::getWriterPageRectangles");
 
     SolarMutexGuard aGuard;
     SetLastExceptionMsg();
@@ -4931,10 +4950,10 @@ char* COKitDocumentImpl::getPartPageRectangles()
     if (!pDoc)
     {
         SetLastExceptionMsg(u"Document doesn't support tiled rendering"_ustr);
-        return nullptr;
+        return {};
     }
 
-    return convertOUString(pDoc->getPartPageRectangles());
+    return pDoc->getWriterPageRectangles();
 }
 
 static char* doc_getA11yFocusedParagraph(COKitDocument* pThis)
@@ -7097,7 +7116,7 @@ static bool getFromTransferable(
     return true;
 }
 
-static char* doc_getTextSelection(COKitDocument* pThis, const char* pMimeType, char** pUsedMimeType)
+static std::string doc_getTextSelection(COKitDocument* pThis, std::string_view pMimeType, std::string* pUsedMimeType)
 {
     comphelper::ProfileZone aZone("doc_getTextSelection");
 
@@ -7108,33 +7127,33 @@ static char* doc_getTextSelection(COKitDocument* pThis, const char* pMimeType, c
     if (!pDoc)
     {
         SetLastExceptionMsg(u"Document doesn't support tiled rendering"_ustr);
-        return nullptr;
+        return {};
     }
 
     css::uno::Reference<css::datatransfer::XTransferable> xTransferable = pDoc->getSelection();
     if (!xTransferable)
     {
         SetLastExceptionMsg(u"No selection available"_ustr);
-        return nullptr;
+        return {};
     }
 
     OString aType
-        = pMimeType && pMimeType[0] != '\0' ? OString(pMimeType) : "text/plain;charset=utf-8"_ostr;
+        = !pMimeType.empty() ? OString(pMimeType) : "text/plain;charset=utf-8"_ostr;
 
     OString aRet;
     bool bSuccess = getFromTransferable(xTransferable, aType, aRet);
     if (!bSuccess)
-        return nullptr;
+        return {};
 
     if (pUsedMimeType) // legacy
     {
-        if (pMimeType)
-            *pUsedMimeType = strdup(pMimeType);
+        if (!pMimeType.empty())
+            *pUsedMimeType = std::string(pMimeType);
         else
-            *pUsedMimeType = nullptr;
+            *pUsedMimeType = {};
     }
 
-    return convertOString(aRet);
+    return std::string(aRet);
 }
 
 static COKitSelectionType doc_getSelectionType(COKitDocument* pThis)
@@ -9121,43 +9140,6 @@ static std::string lo_getError (COKit *pThis)
 
     COKitImpl* pLib = static_cast<COKitImpl*>(pThis);
     return convertOUString(pLib->maLastExceptionMsg);
-}
-
-static char* lo_getFilterTypes(COKit* pThis)
-{
-    SolarMutexGuard aGuard;
-    SetLastExceptionMsg();
-
-    COKitImpl* pImpl = static_cast<COKitImpl*>(pThis);
-
-    if (!xSFactory.is())
-        xSFactory = comphelper::getProcessServiceFactory();
-
-    if (!xSFactory.is())
-    {
-        pImpl->maLastExceptionMsg = u"Service factory is not available"_ustr;
-        return nullptr;
-    }
-
-    uno::Reference<container::XNameAccess> xTypeDetection(xSFactory->createInstance(u"com.sun.star.document.TypeDetection"_ustr), uno::UNO_QUERY);
-    const cpo::uno::Sequence<OUString> aTypes = xTypeDetection->getElementNames();
-    tools::JsonWriter aJson;
-    for (const OUString& rType : aTypes)
-    {
-        cpo::uno::Sequence<beans::PropertyValue> aValues;
-        if (xTypeDetection->getByName(rType) >>= aValues)
-        {
-            auto it = std::find_if(std::cbegin(aValues), std::cend(aValues), [](const beans::PropertyValue& rValue) { return rValue.Name == "MediaType"; });
-            OUString aValue;
-            if (it != std::cend(aValues) && (it->Value >>= aValue) && !aValue.isEmpty())
-            {
-                auto typeNode = aJson.startNode(rType.toUtf8());
-                aJson.put("MediaType", aValue.toUtf8());
-            }
-        }
-    }
-
-    return convertOString(aJson.finishAndGetAsOString());
 }
 
 static void lo_setOptionalFeatures(COKit* pThis, COKitOptionalFeatures const features)

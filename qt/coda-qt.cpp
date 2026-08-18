@@ -19,6 +19,7 @@
 #include <common/Log.hpp>
 #include <common/SettingsStorage.hpp>
 #include <common/Util.hpp>
+#include <qt/StandaloneWindow.hpp>
 #include <qt/WebView.hpp>
 #include <qt/qt.hpp>
 
@@ -192,6 +193,8 @@ int main(int argc, char** argv)
 
     // default application name
     QApplication::setApplicationName(APP_NAME);
+    // Lets window managers associate our windows with the installed desktop file.
+    QGuiApplication::setDesktopFileName("com.collaboraoffice.Office");
     QApplication::setWindowIcon(QIcon::fromTheme("com.collaboraoffice.Office.startcenter"));
 
     QCommandLineParser argParser;
@@ -347,11 +350,14 @@ int main(int argc, char** argv)
     }
     else if (!templateType.isEmpty())
     {
-        coda::openNewDocument(templateType);
+        coda::openNewDocument(templateType.toStdString(), {}, {});
     }
     else
     {
+        // The starter screen runs standalone, not as a tab; closing it quits
+        // the app.
         WebView* starterView = new WebView(Application::getProfile());
+        StandaloneWindow::wrap(starterView);
         starterView->load(Poco::URI(), false, true);
     }
 

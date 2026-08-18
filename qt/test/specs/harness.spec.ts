@@ -49,9 +49,13 @@ describe('Test harness', () => {
 					'accessibility-id="CODA.BackstageWindow.WebView"',
 				);
 			} else {
-				expect(source).toContain('accessibility-id="QApplication"');
+				// The app node id is the desktop file name; the WebView path
+				// varies by window type.
 				expect(source).toContain(
-					'accessibility-id="QApplication.QMainWindow.QWebEngineView"',
+					'accessibility-id="com.collaboraoffice.Office"',
+				);
+				expect(source).toMatch(
+					/accessibility-id="QApplication\.[^"]*QWebEngineView"/,
 				);
 			}
 		});

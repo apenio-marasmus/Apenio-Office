@@ -3991,7 +3991,15 @@ kit_doc_view_copy_selection (KitDocumentView* pDocView,
     std::stringstream ss;
     ss << "COKitDocument::getTextSelection('" << pMimeType << "')";
     g_info("%s", ss.str().c_str());
-    return pDocument->getTextSelection(pMimeType, pUsedMimeType);
+    std::string usedMimeType;
+    auto const selection = pDocument->getTextSelection(pMimeType, &usedMimeType);
+    if (selection.empty()) {
+        return nullptr;
+    }
+    if (pUsedMimeType != nullptr) {
+        *pUsedMimeType = g_strdup(usedMimeType.c_str());
+    }
+    return g_strdup(selection.c_str());
 }
 
 SAL_DLLPUBLIC_EXPORT gboolean

@@ -154,7 +154,6 @@ public:
     void testGetStyles();
     void testGetFonts();
     void testCreateView();
-    void testGetFilterTypes();
     void testGetPartPageRectangles();
     void testSearchCalc();
     void testPropertySettingOnFormulaBar();
@@ -245,7 +244,6 @@ public:
     CPPUNIT_TEST(testGetStyles);
     CPPUNIT_TEST(testGetFonts);
     CPPUNIT_TEST(testCreateView);
-    CPPUNIT_TEST(testGetFilterTypes);
     CPPUNIT_TEST(testGetPartPageRectangles);
     CPPUNIT_TEST(testSearchCalc);
     CPPUNIT_TEST(testPropertySettingOnFormulaBar);
@@ -608,7 +606,7 @@ void DesktopKitTest::testGetPartPageRectangles()
     // Test that we get as many page rectangles as expected: blank document is
     // one page.
     COKitDocumentImpl* pDocument = loadDoc("blank_text.odt");
-    char* pRectangles = pDocument->getPartPageRectangles();
+    std::string pRectangles = pDocument->getWriterPageRectangles();
     OUString sRectangles = OUString::fromUtf8(pRectangles);
 
     std::vector<OUString> aRectangles;
@@ -621,22 +619,6 @@ void DesktopKitTest::testGetPartPageRectangles()
     }
     while (nIndex >= 0);
     CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1), aRectangles.size());
-
-    free(pRectangles);
-}
-
-void DesktopKitTest::testGetFilterTypes()
-{
-    COKitImpl aOffice;
-    char* pJSON = aOffice.getFilterTypes();
-
-    std::stringstream aStream(pJSON);
-    boost::property_tree::ptree aTree;
-    boost::property_tree::read_json(aStream, aTree);
-
-    CPPUNIT_ASSERT(!aTree.empty());
-    CPPUNIT_ASSERT_EQUAL(std::string("application/vnd.oasis.opendocument.text"), aTree.get_child("writer8").get_child("MediaType").get_value<std::string>());
-    free(pJSON);
 }
 
 void DesktopKitTest::testSearchCalc()
@@ -841,9 +823,8 @@ void DesktopKitTest::testPasteWriter()
 
     pDocument->postUnoCommand(".uno:SelectAll", nullptr, false);
     Scheduler::ProcessEventsToIdle();
-    char* pText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
-    CPPUNIT_ASSERT_EQUAL("hello"_ostr, OString(pText));
-    free(pText);
+    std::string aSelectedText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
+    CPPUNIT_ASSERT_EQUAL("hello"_ostr, OString(aSelectedText));
 
     // textt/plain should be rejected.
     CPPUNIT_ASSERT(!pDocument->paste("textt/plain;charset=utf-8", aText.getStr(), aText.getLength()));
@@ -1350,19 +1331,16 @@ void DesktopKitTest::testSheetSelections()
 
     // Copy the contents and check if matches expected data
     {
-        char* pUsedMimeType = nullptr;
-        char* pCopiedContent = pDocument->getTextSelection(nullptr, &pUsedMimeType);
+        std::string aUsedMimeType;
+        std::string aCopiedContent = pDocument->getTextSelection("", &aUsedMimeType);
         std::vector<long> aExpected = {5, 6, 7, 8, 9};
-        std::istringstream iss(pCopiedContent);
+        std::istringstream iss(aCopiedContent);
         for (const long nIndex : aExpected)
         {
             std::string token;
             iss >> token;
             CPPUNIT_ASSERT_EQUAL(nIndex, strtol(token.c_str(), nullptr, 10));
         }
-
-        free(pUsedMimeType);
-        free(pCopiedContent);
     }
 
     /*
@@ -1381,19 +1359,15 @@ void DesktopKitTest::testSheetSelections()
     // Selected text should get deselected and copying should give us
     // content of only one cell, now
     {
-        char* pUsedMimeType  = nullptr;
-        char* pCopiedContent = pDocument->getTextSelection(nullptr, &pUsedMimeType);
+        std::string aCopiedContent = pDocument->getTextSelection("", nullptr);
         std::vector<long> aExpected = { 8 };
-        std::istringstream iss(pCopiedContent);
+        std::istringstream iss(aCopiedContent);
         for (const long nIndex : aExpected)
         {
             std::string token;
             iss >> token;
             CPPUNIT_ASSERT_EQUAL(nIndex, strtol(token.c_str(), nullptr, 10));
         }
-
-        free(pUsedMimeType);
-        free(pCopiedContent);
     }
 }
 
@@ -1447,19 +1421,15 @@ void DesktopKitTest::testSheetDragDrop()
 
     // Check selection content
     {
-        char* pMimeType = nullptr;
-        char* pContent = pDocument->getTextSelection(nullptr, &pMimeType);
+        std::string aSelContent = pDocument->getTextSelection("", nullptr);
         std::vector<long> aExpected = {1, 2, 3, 4, 5};
-        std::istringstream aContent(pContent);
+        std::istringstream aContent(aSelContent);
         std::string token;
         for (const long nIndex : aExpected)
         {
             aContent >> token;
             CPPUNIT_ASSERT_EQUAL(nIndex, strtol(token.c_str(), nullptr, 10));
         }
-
-        free(pMimeType);
-        free(pContent);
     }
 
     // drag and drop
@@ -1499,19 +1469,15 @@ void DesktopKitTest::testSheetDragDrop()
 
     // Check selection content
     {
-        char* pMimeType = nullptr;
-        char* pContent = pDocument->getTextSelection(nullptr, &pMimeType);
+        std::string aSelContent = pDocument->getTextSelection("", nullptr);
         std::vector<long> aExpected = {1, 2, 3, 4, 5};
-        std::istringstream aContent(pContent);
+        std::istringstream aContent(aSelContent);
         std::string token;
         for (const long nIndex : aExpected)
         {
             aContent >> token;
             CPPUNIT_ASSERT_EQUAL(nIndex, strtol(token.c_str(), nullptr, 10));
         }
-
-        free(pMimeType);
-        free(pContent);
     }
 }
 
@@ -2268,10 +2234,8 @@ void DesktopKitTest::testInput()
     // get the text ...
     pDocument->postUnoCommand(".uno:SelectAll", nullptr, false);
     Scheduler::ProcessEventsToIdle();
-    char* pText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
-    CPPUNIT_ASSERT(pText != nullptr);
-    CPPUNIT_ASSERT_EQUAL("far beyond lovely "_ostr, OString(pText));
-    free(pText);
+    std::string aText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
+    CPPUNIT_ASSERT_EQUAL("far beyond lovely "_ostr, OString(aText));
 }
 
 void DesktopKitTest::testRedlineWriter()
@@ -3419,9 +3383,8 @@ void DesktopKitTest::testCalcValidityDropdown()
     Scheduler::ProcessEventsToIdle();
 
     // Check the content of the current cell. The selected value of the dropdown was 1. It should be 4 now.
-    char* pCellContent = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
-    CPPUNIT_ASSERT_EQUAL("4"_ostr, OString(pCellContent));
-    free(pCellContent);
+    std::string aCellContent = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
+    CPPUNIT_ASSERT_EQUAL("4"_ostr, OString(aCellContent));
 }
 
 void DesktopKitTest::testCalcValidityDropdownInReadonlyMode()
@@ -3924,9 +3887,8 @@ void DesktopKitTest::testTextSelectionHandles()
     // select the inserted text
     pDocument->postUnoCommand(".uno:SelectAll", nullptr, false);
     Scheduler::ProcessEventsToIdle();
-    char* pText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
-    CPPUNIT_ASSERT_EQUAL(aText, OString(pText));
-    free(pText);
+    std::string aSelText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
+    CPPUNIT_ASSERT_EQUAL(aText, OString(aSelText));
     CPPUNIT_ASSERT_EQUAL("1418, 1418, 0, 275"_ostr, m_aTextSelectionStart);
     CPPUNIT_ASSERT_EQUAL("1897, 1418, 0, 275"_ostr, m_aTextSelectionEnd);
 
@@ -3935,9 +3897,8 @@ void DesktopKitTest::testTextSelectionHandles()
     m_aTextSelectionEnd = ""_ostr;
     pDocument->postKeyEvent(COKitKeyEventType::DOWN, 0, css::awt::Key::ESCAPE);
     Scheduler::ProcessEventsToIdle();
-    pText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
-    CPPUNIT_ASSERT_EQUAL(static_cast<char *>(nullptr), pText);
-    free(pText);
+    aSelText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
+    CPPUNIT_ASSERT_EQUAL(""_ostr, OString(aSelText));
     CPPUNIT_ASSERT_EQUAL(OString(), m_aTextSelectionStart);
     CPPUNIT_ASSERT_EQUAL(OString(), m_aTextSelectionEnd);
 
@@ -3945,9 +3906,8 @@ void DesktopKitTest::testTextSelectionHandles()
     // again
     pDocument->postUnoCommand(".uno:SelectAll", nullptr, false);
     Scheduler::ProcessEventsToIdle();
-    pText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
-    CPPUNIT_ASSERT_EQUAL(aText, OString(pText));
-    free(pText);
+    aSelText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
+    CPPUNIT_ASSERT_EQUAL(aText, OString(aSelText));
     CPPUNIT_ASSERT_EQUAL("1418, 1418, 0, 275"_ostr, m_aTextSelectionStart);
     CPPUNIT_ASSERT_EQUAL("1897, 1418, 0, 275"_ostr, m_aTextSelectionEnd);
 }
@@ -4010,24 +3970,18 @@ void DesktopKitTest::testComplexSelection()
     Scheduler::ProcessEventsToIdle();
 
     // Export as plain text, we should get only the text part "hello".
-    char* pText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
-    CPPUNIT_ASSERT(pText != nullptr);
-    CPPUNIT_ASSERT_EQUAL(aText, OString(pText));
-    free(pText);
+    std::string aSelText = pDocument->getTextSelection("text/plain;charset=utf-8", nullptr);
+    CPPUNIT_ASSERT_EQUAL(aText, OString(aSelText));
 
     // Export as rtf, we should also get the image.
-    pText = pDocument->getTextSelection("text/rtf", nullptr);
-    CPPUNIT_ASSERT(pText != nullptr);
-    CPPUNIT_ASSERT(std::string(pText).find(aText.getStr()) != std::string::npos); // Must have the text.
-    CPPUNIT_ASSERT(std::string(pText).find("pict{") != std::string::npos); // Must have the image as well.
-    free(pText);
+    aSelText = pDocument->getTextSelection("text/rtf", nullptr);
+    CPPUNIT_ASSERT(aSelText.find(aText.getStr()) != std::string::npos); // Must have the text.
+    CPPUNIT_ASSERT(aSelText.find("pict{") != std::string::npos); // Must have the image as well.
 
     // Export as html, we should also get the image.
-    pText = pDocument->getTextSelection("text/html", nullptr);
-    CPPUNIT_ASSERT(pText != nullptr);
-    CPPUNIT_ASSERT(std::string(pText).find(aText.getStr()) != std::string::npos); // Must have the text.
-    CPPUNIT_ASSERT(std::string(pText).find("<img") != std::string::npos); // Must have the image as well.
-    free(pText);
+    aSelText = pDocument->getTextSelection("text/html", nullptr);
+    CPPUNIT_ASSERT(aSelText.find(aText.getStr()) != std::string::npos); // Must have the text.
+    CPPUNIT_ASSERT(aSelText.find("<img") != std::string::npos); // Must have the image as well.
 
     // We expect this to be complex.
     CPPUNIT_ASSERT_EQUAL(static_cast<int>(COKitSelectionType::COMPLEX),

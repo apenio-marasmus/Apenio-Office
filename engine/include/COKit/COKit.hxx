@@ -1451,11 +1451,7 @@ struct COKit
     /**
      * Loads a document from a URL.
      *
-     * @param pUrl the URL of the document to load
-     * @param pFilterOptions options for the import filter, e.g. SkipImages.
-     *        Another useful FilterOption is "Language=...".  It is consumed
-     *        by the documentLoad() itself, and when provided, COKit
-     *        switches the language accordingly first.
+     * @param pURL the URL of the document to load
      */
     virtual COKitDocument* documentLoad(const char* pURL) = 0;
 
@@ -1472,23 +1468,6 @@ struct COKit
      * @param pData the user data, will be passed to the callback on invocation
      */
     virtual void registerCallback(COKitCallback pCallback, void* pData) = 0;
-
-    /**
-     * Returns details of filter types.
-     *
-     * Example returned string:
-     *
-     * {
-     *     "writer8": {
-     *         "MediaType": "application/vnd.oasis.opendocument.text"
-     *     },
-     *     "calc8": {
-     *         "MediaType": "application/vnd.oasis.opendocument.spreadsheet"
-     *     }
-     * }
-     *
-     */
-    virtual char* getFilterTypes() = 0;
 
     /**
      * Set bitmask of optional features supported by the client.
@@ -1569,7 +1548,7 @@ struct COKit
      * @param nWindowId id of the window to notify
      * @param pArguments arguments of the event.
      */
-    virtual void sendDialogEvent(unsigned long long int nKitWindowId, const char* pArguments) = 0;
+    virtual void sendDialogEvent(unsigned long long int nWindowId, const char* pArguments) = 0;
 
     /**
      * Generic function to toggle and tweak various things in engine
@@ -1612,7 +1591,7 @@ struct COKit
      * in heavy use. This provides a critical tool for inspecting
      * relevant internal state.
      *
-     * @param pOption future expansion - string options.
+     * @param pOptions future expansion - string options.
      * @param pState - heap allocated, C string containing the state dump.
      */
     virtual void dumpState(const char* pOptions, char** pState) = 0;
@@ -1649,7 +1628,7 @@ struct COKit
     /**
      * Stop a function based URP connection you previously started with startURP
      *
-     * @param pURPContext the context returned by startURP  when starting the connection
+     * @param pSendURPToEngineContext the context returned by startURP  when starting the connection
      */
     virtual void stopURP(void* pSendURPToEngineContext) = 0;
 
@@ -1836,7 +1815,7 @@ struct COKitDocument
      * @return a rectangle list, using the same format as
      * COKitCallbackType::TEXT_SELECTION.
      */
-    virtual char* getPartPageRectangles() = 0;
+    virtual std::string getWriterPageRectangles() = 0;
 
     /// Get the current part number of the document. For a presentation or
     /// drawing document a part number is the page's stable unique identifier;
@@ -1928,8 +1907,8 @@ struct COKitDocument
      * @param nX horizontal position in document coordinates
      * @param nY vertical position in document coordinates
      * @param nCount number of clicks: 1 for single click, 2 for double click
-     * @param nButtons: which mouse buttons: 1 for left, 2 for middle, 4 right
-     * @param nModifier: which keyboard modifier: (see include/vcl/vclenum.hxx for possible values)
+     * @param nButtons which mouse buttons: 1 for left, 2 for middle, 4 right
+     * @param nModifier which keyboard modifier: (see include/vcl/vclenum.hxx for possible values)
      */
     virtual void postMouseEvent(COKitMouseEventType eType, int nX, int nY, int nCount,
                                 int nButtons, int nModifier) = 0;
@@ -1961,7 +1940,7 @@ struct COKitDocument
     /**
      * Sets the start or end of a text selection.
      *
-     * @param nType @see COKitSetTextSelectionType
+     * @param eType @see COKitSetTextSelectionType
      * @param nX horizontal position in document coordinates
      * @param nY vertical position in document coordinates
      */
@@ -1973,7 +1952,7 @@ struct COKitDocument
      * @param pMimeType suggests the return format, for example text/plain;charset=utf-8.
      * @param pUsedMimeType output parameter to inform about the determined format (suggested one or plain text).
      */
-    virtual char* getTextSelection(const char* pMimeType, char** pUsedMimeType) = 0;
+    virtual std::string getTextSelection(std::string_view pMimeType, std::string* pUsedMimeType) = 0;
 
     /**
      * Pastes content at the current cursor position.
@@ -1987,7 +1966,7 @@ struct COKitDocument
     /**
      * Adjusts the graphic selection.
      *
-     * @param nType @see COKitSetGraphicSelectionType
+     * @param eType @see COKitSetGraphicSelectionType
      * @param nX horizontal position in document coordinates
      * @param nY vertical position in document coordinates
      */
@@ -2110,7 +2089,7 @@ struct COKitDocument
     /**
      * Posts a keyboard event to the dialog
      *
-     * @param nWindowId
+     * @param nWindowId id of window
      * @param eType Event type, like press or release.
      * @param nCharCode contains the Unicode character generated by this event or 0
      * @param nKeyCode contains the integer code representing the key of the event (non-zero for control keys)
@@ -2121,13 +2100,13 @@ struct COKitDocument
     /**
      * Posts a mouse event to the window with given id.
      *
-     * @param nWindowId
+     * @param nWindowId id of window
      * @param eType Event type, like down, move or up.
      * @param nX horizontal position in document coordinates
      * @param nY vertical position in document coordinates
      * @param nCount number of clicks: 1 for single click, 2 for double click
-     * @param nButtons: which mouse buttons: 1 for left, 2 for middle, 4 right
-     * @param nModifier: which keyboard modifier: (see include/vcl/vclenum.hxx for possible values)
+     * @param nButtons which mouse buttons: 1 for left, 2 for middle, 4 right
+     * @param nModifier which keyboard modifier: (see include/vcl/vclenum.hxx for possible values)
      */
     virtual void postWindowMouseEvent(unsigned nWindowId, COKitMouseEventType eType, int nX,
                                       int nY, int nCount, int nButtons, int nModifier) = 0;
@@ -2192,7 +2171,7 @@ struct COKitDocument
     /**
      * Posts a gesture event to the window with given id.
      *
-     * @param nWindowId
+     * @param nWindowId id of window
      * @param pType Event type, like panStart, panEnd, panUpdate.
      * @param nX horizontal position in document coordinates
      * @param nY vertical position in document coordinates
@@ -2223,7 +2202,7 @@ struct COKitDocument
     /**
      * Resize a window (dialog, popup, etc.) with give id.
      *
-     * @param nWindowId
+     * @param nWindowId id of window
      * @param width The width of the window.
      * @param height The height of the window.
      */
@@ -2284,7 +2263,7 @@ struct COKitDocument
      * @param nWindowId id of the window to notify
      * @param pArguments arguments of the event.
      */
-    virtual void sendDialogEvent(unsigned long long int nKitWindowId, const char* pArguments) = 0;
+    virtual void sendDialogEvent(unsigned long long int nWindowId, const char* pArguments) = 0;
 
     /**
      * Paints a font name or character if provided to be displayed in the font list
@@ -2317,14 +2296,14 @@ struct COKitDocument
     /**
      * Select the Calc function to be pasted into the formula input box
      *
-     * @param nIndex is the index of the selected function
+     * @param pFunctionName name of function
      */
     virtual void completeFunction(const char* pFunctionName) = 0;
 
     /**
      * Sets the start or end of a text selection for a dialog.
      *
-     * @param nWindowId
+     * @param nWindowId id of window
      * @param bSwap swap anchor and cursor position of current selection
      * @param nX horizontal position in document coordinates
      * @param nY vertical position in document coordinates
@@ -2345,9 +2324,9 @@ struct COKitDocument
      *
      * @param pSearchResult payload containing the search result data
      * @param pBitmapBuffer contains the bitmap; use free to deallocate.
-     * @param nWidth output bitmap width
-     * @param nHeight output bitmap height
-     * @param nByteSize output bitmap byte size
+     * @param pWidth output bitmap width
+     * @param pHeight output bitmap height
+     * @param pByteSize output bitmap byte size
      * @return true if successful
      */
     virtual bool renderSearchResult(const char* pSearchResult, unsigned char** pBitmapBuffer,
@@ -2404,7 +2383,7 @@ struct COKitDocument
      * Set the timezone of the window with the specified nId.
      *
      * @param nId a view ID, returned by createView().
-     * @param timezone a timezone in the tzfile(5) format (e.g. Pacific/Auckland).
+     * @param pTimezone a timezone in the tzfile(5) format (e.g. Pacific/Auckland).
      */
     virtual void setViewTimezone(int nId, const char* pTimezone) = 0;
 
@@ -2432,14 +2411,14 @@ struct COKitDocument
     /** Set if the view should be treated as readonly or not.
      *
      * @param nId view ID
-     * @param readOnly
+     * @param readOnly true if view readonly
     */
     virtual void setViewReadOnly(int nId, const bool readOnly) = 0;
 
     /** Set if the view can edit comments on readonly mode or not.
      *
      * @param nId view ID
-     * @param allow
+     * @param allow true if comments allowed
     */
     virtual void setAllowChangeComments(int nId, const bool allow) = 0;
 
@@ -2472,7 +2451,7 @@ struct COKitDocument
     /** Set if the view can manage redlines in readonly mode or not.
      *
      * @param nId view ID
-     * @param allow
+     * @param allow true for redlines allowed
     */
     virtual void setAllowManageRedlines(int nId, bool allow) = 0;
 

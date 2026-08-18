@@ -220,8 +220,8 @@ extern "C" SAL_JNI_EXPORT jstring JNICALL Java_org_libreoffice_kit_Document_getP
     (JNIEnv* pEnv, jobject aObject)
 {
     COKitDocument* pDocument = getHandle<COKitDocument>(pEnv, aObject);
-    char* pRectangles = pDocument->getPartPageRectangles();
-    return pEnv->NewStringUTF(pRectangles);
+    std::string pRectangles = pDocument->getWriterPageRectangles();
+    return pEnv->NewStringUTF(pRectangles.c_str());
 }
 
 extern "C" SAL_JNI_EXPORT jint JNICALL Java_org_libreoffice_kit_Document_getParts
@@ -357,13 +357,11 @@ extern "C" SAL_JNI_EXPORT jstring JNICALL Java_org_libreoffice_kit_Document_getT
 
     const char* pMimeType = pEnv->GetStringUTFChars(mimeType, NULL);
 
-    char* pUsedMimeType = 0;
-    char* pSelection = pDocument->getTextSelection(pMimeType, &pUsedMimeType);
-    free(pUsedMimeType);
+    std::string aSelection = pDocument->getTextSelection(pMimeType, nullptr);
 
     pEnv->ReleaseStringUTFChars(mimeType, pMimeType);
 
-    return pEnv->NewStringUTF(pSelection);
+    return pEnv->NewStringUTF(aSelection.c_str());
 }
 
 extern "C" SAL_JNI_EXPORT jboolean JNICALL Java_org_libreoffice_kit_Document_paste
