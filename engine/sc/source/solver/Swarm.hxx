@@ -10,11 +10,18 @@
 
 #pragma once
 
+#include <sal/types.h>
+
 #include <cmath>
 #include <vector>
 #include <random>
 #include <limits>
 
+namespace sc
+{
+/** One candidate solution in the swarm: its current position and
+ *  velocity, and the best position it has visited so far.
+ */
 struct Particle
 {
     Particle(size_t nDimensionality)
@@ -58,10 +65,14 @@ template <typename DataProvider> class Swarm
     int mnLastChange;
 
 public:
-    Swarm(DataProvider& rDataProvider, size_t nNumOfParticles)
+    /** A seed above zero repeats the same random sequence on every run.
+     *  Zero or below draws a fresh sequence from the random device.
+     */
+    Swarm(DataProvider& rDataProvider, size_t nNumOfParticles, sal_Int32 nSeed = 0)
         : mrDataProvider(rDataProvider)
         , mnNumOfParticles(nNumOfParticles)
-        , maGenerator(maRandomDevice())
+        , maGenerator(nSeed > 0 ? std::mt19937::result_type(nSeed)
+                                : std::mt19937::result_type(maRandomDevice()))
         , mnDimensionality(mrDataProvider.getDimensionality())
         , maBestPosition(mnDimensionality)
         , mfBestFitness(std::numeric_limits<double>::lowest())
@@ -187,5 +198,7 @@ private:
         return bBestChanged;
     }
 };
+
+} // namespace sc
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

@@ -47,7 +47,7 @@
 #include <scresid.hxx>
 
 #include "DifferentialEvolution.hxx"
-#include "ParticelSwarmOptimization.hxx"
+#include "ParticleSwarmOptimization.hxx"
 #include "DEPSOSolver.hxx"
 
 #include "strings.hrc"
@@ -59,6 +59,8 @@ class XComponentContext;
 
 using namespace css;
 
+namespace sc
+{
 namespace
 {
 struct Bound
@@ -127,12 +129,9 @@ enum
     PROP_INTEGER,
     PROP_TIMEOUT,
     PROP_ALGORITHM,
+    PROP_RANDOM_SEED,
 };
 
-} // end anonymous namespace
-
-namespace
-{
 class SwarmSolver
     : public comphelper::OPropertyContainerImplHelper<
           comphelper::WeakImplHelper<sheet::XSolver, sheet::XSolverDescription, lang::XServiceInfo>,
@@ -152,6 +151,9 @@ private:
     bool mbInteger;
     sal_Int32 mnTimeout;
     sal_Int32 mnAlgorithm;
+    // A value above zero makes every run draw the same random sequence. Zero
+    // draws a fresh one for each run.
+    sal_Int32 mnRandomSeed;
 
     // results
     bool mbSuccess;
@@ -189,6 +191,7 @@ public:
         , mbInteger(false)
         , mnTimeout(60000)
         , mnAlgorithm(2)
+        , mnRandomSeed(0)
         , mbSuccess(false)
         , mfResultValue(0.0)
     {
@@ -200,6 +203,8 @@ public:
                          cppu::UnoType<decltype(mnTimeout)>::get());
         registerProperty(u"Algorithm"_ustr, PROP_ALGORITHM, 0, &mnAlgorithm,
                          cppu::UnoType<decltype(mnAlgorithm)>::get());
+        registerProperty(u"RandomSeed"_ustr, PROP_RANDOM_SEED, 0, &mnRandomSeed,
+                         cppu::UnoType<decltype(mnRandomSeed)>::get());
     }
 
     // OPropertyArrayUsageHelper
@@ -221,13 +226,7 @@ public:
         mxDocument = rDocument;
         mpDocument = nullptr;
         if (ScModelObj* pModel = comphelper::getFromUnoTunnel<ScModelObj>(mxDocument))
-        {
             mpDocument = pModel->GetDocument();
-            // The solver writes input cells and reads the recalculated objective
-            // and constraint cells, which needs automatic recalculation on.
-            if (mpDocument)
-                mpDocument->SetAutoCalc(true);
-        }
     }
 
     virtual table::CellAddress SAL_CALL getObjective() override { return maObjective; }
@@ -291,6 +290,9 @@ public:
             case PROP_ALGORITHM:
                 pResId = RID_PROPERTY_ALGORITHM;
                 break;
+            case PROP_RANDOM_SEED:
+                pResId = RID_PROPERTY_RANDOM_SEED;
+                break;
             default:
                 break;
         }
@@ -328,7 +330,6 @@ public:
     double clampVariable(size_t nVarIndex, double fValue);
     double boundVariable(size_t nVarIndex, double fValue);
 };
-}
 
 uno::Reference<table::XCell> SwarmSolver::getCell(const table::CellAddress& rPosition)
 {
@@ -349,7 +350,7 @@ uno::Reference<table::XCell> SwarmSolver::getCell(const table::CellAddress& rPos
 // outside the document. Access through the spreadsheet UNO objects used to throw
 // on a missing sheet. Direct ScDocument access does not, so validate here to keep
 // an invalid variable cell an error rather than a silently ignored write.
-static ScAddress lcl_cellAddress(const ScDocument& rDocument, const table::CellAddress& rPosition)
+ScAddress lcl_cellAddress(const ScDocument& rDocument, const table::CellAddress& rPosition)
 {
     if (rPosition.Sheet < 0 || rPosition.Sheet >= rDocument.GetTableCount())
         throw uno::RuntimeException(u"solver: cell address is outside the document"_ustr);
@@ -391,9 +392,10 @@ double SwarmSolver::calculateFitness(std::vector<double> const& rVariables)
     // feasible region. The strict feasibility test still decides what is
     // reported as a solution, so a point that only nearly satisfies the
     // constraints is never returned as the answer.
+    constexpr double constInfeasibilityPenaltyWeight = 1.0e7;
     double fViolation = constraintViolation();
     if (fViolation > 0.0)
-        fFitness -= 1.0e7 * fViolation;
+        fFitness -= constInfeasibilityPenaltyWeight * fViolation;
 
     return fFitness;
 }
@@ -635,8 +637,6 @@ bool SwarmSolver::isSolutionFeasible(std::vector<double> const& rSolution)
     return !doesViolateConstraints();
 }
 
-namespace
-{
 template <typename SwarmAlgorithm> class SwarmRunner
 {
 private:
@@ -706,7 +706,6 @@ public:
         return mrAlgorithm.getResult();
     }
 };
-}
 
 void SAL_CALL SwarmSolver::solve()
 {
@@ -714,6 +713,7 @@ void SAL_CALL SwarmSolver::solve()
 
     maStatus.clear();
     mbSuccess = false;
+    mfResultValue = 0.0;
     if (!maVariables.getLength())
         return;
 
@@ -729,6 +729,16 @@ void SAL_CALL SwarmSolver::solve()
     // Unlock again on any exit from here on, including an exception thrown by
     // one of the cell accesses below, so the document is always left usable.
     comphelper::ScopeGuard aUnlockGuard([&xModel] { xModel->unlockControllers(); });
+
+    // The solve writes input cells and reads the recalculated objective and
+    // constraints, so automatic recalculation has to be on while it runs.
+    const bool bOldAutoCalc = mpDocument && mpDocument->GetAutoCalc();
+    if (mpDocument)
+        mpDocument->SetAutoCalc(true);
+    comphelper::ScopeGuard aAutoCalcGuard([this, bOldAutoCalc] {
+        if (mpDocument)
+            mpDocument->SetAutoCalc(bOldAutoCalc);
+    });
 
     if (mbNonNegative)
     {
@@ -794,7 +804,7 @@ void SAL_CALL SwarmSolver::solve()
     {
         size_t nPopulation = std::clamp<size_t>(10 * nDimensions, 50, 300);
         mnSeedCount = nPopulation / 2;
-        DifferentialEvolutionSolver<SwarmSolver> aDE(*this, nPopulation);
+        DifferentialEvolutionSolver<SwarmSolver> aDE(*this, nPopulation, mnRandomSeed);
         SwarmRunner<DifferentialEvolutionSolver<SwarmSolver>> aEvolution(aDE);
         aEvolution.setTimeout(mnTimeout);
         aSolution = aEvolution.solve();
@@ -803,7 +813,7 @@ void SAL_CALL SwarmSolver::solve()
     {
         size_t nPopulation = std::clamp<size_t>(10 * nDimensions, 100, 300);
         mnSeedCount = nPopulation / 2;
-        DEPSOSolver<SwarmSolver> aDepso(*this, nPopulation);
+        DEPSOSolver<SwarmSolver> aDepso(*this, nPopulation, mnRandomSeed);
         SwarmRunner<DEPSOSolver<SwarmSolver>> aRunner(aDepso);
         aRunner.setTimeout(mnTimeout);
         aSolution = aRunner.solve();
@@ -812,7 +822,7 @@ void SAL_CALL SwarmSolver::solve()
     {
         size_t nPopulation = std::clamp<size_t>(10 * nDimensions, 100, 300);
         mnSeedCount = nPopulation / 2;
-        ParticleSwarmOptimizationSolver<SwarmSolver> aPSO(*this, nPopulation);
+        ParticleSwarmOptimizationSolver<SwarmSolver> aPSO(*this, nPopulation, mnRandomSeed);
         SwarmRunner<ParticleSwarmOptimizationSolver<SwarmSolver>> aSwarmSolver(aPSO);
         aSwarmSolver.setTimeout(mnTimeout);
         aSolution = aSwarmSolver.solve();
@@ -829,6 +839,9 @@ void SAL_CALL SwarmSolver::solve()
     {
         maSolution.realloc(aSolution.size());
         std::copy(aSolution.begin(), aSolution.end(), maSolution.getArray());
+        // The feasibility check left the solution in the document, so the
+        // objective cell now holds the value that goes with it.
+        mfResultValue = getValue(maObjective);
     }
     else
     {
@@ -837,11 +850,15 @@ void SAL_CALL SwarmSolver::solve()
     }
 }
 
+} // end anonymous namespace
+
+} // namespace sc
+
 extern "C" SAL_DLLPUBLIC_EXPORT uno::XInterface*
 com_sun_star_comp_Calc_SwarmSolver_get_implementation(uno::XComponentContext*,
                                                       cpo::uno::Sequence<cpo::uno::Any> const&)
 {
-    return cppu::acquire(new SwarmSolver());
+    return cppu::acquire(new sc::SwarmSolver());
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

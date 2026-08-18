@@ -15,6 +15,8 @@
 
 #include <vector>
 
+namespace sc
+{
 // Standalone differential evolution solver: a swarm driven by the differential
 // evolution engine every generation, mutating around a random member.
 template <typename DataProvider> class DifferentialEvolutionSolver
@@ -26,8 +28,9 @@ template <typename DataProvider> class DifferentialEvolutionSolver
     DEAlgorithm<DataProvider> maAlgorithm;
 
 public:
-    DifferentialEvolutionSolver(DataProvider& rDataProvider, size_t nNumOfParticles)
-        : maSwarm(rDataProvider, nNumOfParticles)
+    DifferentialEvolutionSolver(DataProvider& rDataProvider, size_t nNumOfParticles,
+                                sal_Int32 nSeed = 0)
+        : maSwarm(rDataProvider, nNumOfParticles, nSeed)
         , maAlgorithm(maSwarm, constDifferentialWeight, constCrossoverProbability,
                       DifferentialBound::Wrap, DifferentialBase::RandomMember)
     {
@@ -42,5 +45,7 @@ public:
     int getLastChange() const { return maSwarm.getLastChange(); }
     double getBestFitness() const { return maSwarm.getBestFitness(); }
 };
+
+} // namespace sc
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */
