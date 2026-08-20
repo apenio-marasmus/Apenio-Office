@@ -34,7 +34,11 @@ window.L.Map.include({
 		//
 		// For mobile we need to display the edit button for all the cases except for PDF (which is read-only)
 		// we offer save-as to another place where the user can edit the document
-		if (!app.file.readOnly && (window.mode.isSmallScreenDevice() || window.mode.isTablet())) {
+		// The mobile apps use local storage not WOPI, so BaseFileName will be empty.
+		// Fall back to the document URL which ends with the file name.
+		var fileName = this['wopi'].BaseFileName || this.options.doc || '';
+		var isPDF = fileName.toLowerCase().endsWith('.pdf');
+		if (!isPDF && (window.mode.isSmallScreenDevice() || window.mode.isTablet())) {
 			button.css('display', 'flex');
 		} else {
 			button.hide();
@@ -153,8 +157,13 @@ window.L.Map.include({
 		// notebookbar dropdown queues a task on close that would otherwise
 		// steal focus back. In the iOS/android app, just clicking the
 		// mobile-edit-button is not reason enough to pop up the on-screen
-		// keyboard, so skip the focus there.
-		if (!(window.ThisIsTheiOSApp || window.ThisIsTheAndroidApp))
+		// keyboard, so skip the focus there. With a physical keyboard there is
+		// no on-screen keyboard to pop up, and taking the focus is what lets
+		// typing reach the document straight away.
+		const holdBackFocusForOnscreenKeyboard =
+			(window.ThisIsTheiOSApp || window.ThisIsTheAndroidApp)
+			&& !window.keyboard.hardwareKeyboardAttached;
+		if (!holdBackFocusForOnscreenKeyboard)
 			app.layoutingService.onDrain(this.focus.bind(this));
 	},
 

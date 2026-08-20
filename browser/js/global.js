@@ -281,6 +281,8 @@ class InitializerBase {
 		window.useStatusbarSaveIndicator = false;
 		window.checkFileInfoOverride = {};
 		window.deeplEnabled = false;
+		// Match COOL's ai.ethical_rating_message default (true).
+		window.aiEthicalRatingMessage = true;
 		// Match COOL's zotero.enable default (true). On the desktop the plugin
 		// is still gated on a user-provided API key (and !isSmallScreenDevice)
 		// so this only surfaces the feature where it makes sense.
@@ -459,6 +461,7 @@ class BrowserInitializer extends InitializerBase {
 		window.uiDefaults = JSON.parse(atob(element.dataset.uiDefaults));
 		window.checkFileInfoOverride = element.dataset.checkFileInfoOverride;
 		window.deeplEnabled = element.dataset.deeplEnabled.toLowerCase().trim() === "true";
+		window.aiEthicalRatingMessage = element.dataset.aiEthicalRatingMessage.toLowerCase().trim() === "true";
 		window.zoteroEnabled = element.dataset.zoteroEnabled.toLowerCase().trim() === "true";
 		window.documentSigningEnabled = element.dataset.documentSigningEnabled.toLowerCase().trim() === "true";
 		window.savedUIState = element.dataset.savedUiState.toLowerCase().trim() === "true";
@@ -1262,6 +1265,10 @@ function showWelcomeSVG() {
 
 	global.keyboard = {
 		onscreenKeyboardHint: global.uiDefaults['onscreenKeyboardHint'],
+		// True while a physical keyboard is attached. Only the Android app reports this, everywhere
+		// else it stays false.
+		hardwareKeyboardAttached: global.ThisIsTheAndroidApp
+			&& global.COOLMessageHandler.hasHardwareKeyboard(),
 		// If there's an onscreen keyboard, we don't want to trigger it with innocuous actions like panning around a spreadsheet
 		// on the other hand, if there is a hardware keyboard we want to do things like focusing contenteditables so that typing is
 		// recognized without tapping again. This is an impossible problem, because browsers do not give us enough information
@@ -1270,6 +1277,7 @@ function showWelcomeSVG() {
 			if (global.ThisIsTheWindowsApp || global.ThisIsTheQtApp || global.ThisIsTheMacOSApp)
 				return false;
 			if (global.keyboard.onscreenKeyboardHint != undefined) return global.keyboard.onscreenKeyboardHint;
+			if (global.keyboard.hardwareKeyboardAttached) return false;
 			return (global.ThisIsAMobileApp && !global.ThisIsTheEmscriptenApp) || global.mode.isSmallScreenDevice() || global.mode.isTablet();
 			// It's better to guess that more devices will have an onscreen keyboard than reality,
 			// because calc becomes borderline unusable if you miss a device that pops up an onscreen keyboard which covers
@@ -1278,19 +1286,32 @@ function showWelcomeSVG() {
 		// alternatively, maybe someone else (e.g. an integrator) knows more about the situation than we do. In this case, let's
 		// let them override our default
 		hintOnscreenKeyboard: function(hint) {
-			if (global.app
-					&& global.L.Map
-					&& global.L.Map.THIS._docLayer.isCalc()
-					&& hint !== undefined) {
-				var command = {
-					Enable: {
-						type: 'boolean',
-						value: hint
-					}
-				};
-				global.L.Map.THIS.sendUnoCommand('.uno:MoveKeepInsertMode', command);
-			}
 			global.keyboard.onscreenKeyboardHint = hint;
+			if (hint !== undefined)
+				global.keyboard.applyOnscreenKeyboardMode();
+		},
+		// Record that a physical keyboard was attached or detached, and follow it with the Calc
+		// behaviour that goes with the new state.
+		setHardwareKeyboardAttached: function(attached) {
+			if (global.keyboard.hardwareKeyboardAttached === attached)
+				return;
+
+			global.keyboard.hardwareKeyboardAttached = attached;
+			global.keyboard.applyOnscreenKeyboardMode();
+		},
+		// With a physical keyboard Enter and Tab leave insert mode, the way they do on a desktop.
+		applyOnscreenKeyboardMode: function() {
+			const map = global.L && global.L.Map ? global.L.Map.THIS : undefined;
+			if (!global.app || !map || !map._docLayer || !map._docLayer.isCalc())
+				return;
+
+			const command = {
+				Enable: {
+					type: 'boolean',
+					value: global.keyboard.guessOnscreenKeyboard()
+				}
+			};
+			map.sendUnoCommand('.uno:MoveKeepInsertMode', command);
 		},
 	};
 

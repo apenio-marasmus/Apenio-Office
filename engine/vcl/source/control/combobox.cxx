@@ -103,6 +103,7 @@ void ComboBox::ImplInitComboBoxData()
     m_isSyntheticModify = false;
     m_isKeyBoardModify  = false;
     m_isMatchCase       = false;
+    m_bRenderSelectedEntry = false;
     m_cMultiSep         = ';';
     m_nMaxWidthChars    = -1;
     m_nWidthInChars     = -1;
@@ -1567,6 +1568,8 @@ bool ComboBox::set_property(const OUString &rKey, const OUString &rValue)
     }
     else if (rKey == "placeholder-text")
         SetPlaceholderText(rValue);
+    else if (rKey == "render-selected-entry")
+        SetRenderSelectedEntry(toBool(rValue));
     else
         return Control::set_property(rKey, rValue);
     return true;
@@ -1589,6 +1592,16 @@ void ComboBox::DumpAsPropertyTree(tools::JsonWriter& rJsonWriter)
         }
     }
 
+    if (m_pImplLB && m_pImplLB->GetSeparatorPos() != LISTBOX_ENTRY_NOTFOUND)
+    {
+        auto separatorsNode = rJsonWriter.startArray("separators");
+        for (sal_Int32 i = 0; i < GetEntryCount(); ++i)
+        {
+            if (m_pImplLB->isSeparator(i))
+                rJsonWriter.putSimpleValue(OUString::number(i));
+        }
+    }
+
     {
         auto selectedNode = rJsonWriter.startArray("selectedEntries");
         for (int i = 0; i < GetSelectedEntryCount(); ++i)
@@ -1606,6 +1619,8 @@ void ComboBox::DumpAsPropertyTree(tools::JsonWriter& rJsonWriter)
     // report it when a dialog turned it off, rather than repeating "true" everywhere.
     if (!IsAutocompleteEnabled())
         rJsonWriter.put("entrycompletion", false);
+    if (IsRenderSelectedEntry())
+        rJsonWriter.put("renderSelectedEntry", true);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

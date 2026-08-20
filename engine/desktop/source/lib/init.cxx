@@ -570,21 +570,19 @@ RectangleAndPart RectangleAndPart::Create(const OString& rPayload)
     if (rPayload.startsWith("EMPTY")) // payload starts with "EMPTY"
     {
         aRet.m_aRectangle = tools::Rectangle(0, 0, KitHelper::MaxTwips, KitHelper::MaxTwips);
-        if (comphelper::COKit::isPartInInvalidation())
+
+        int nSeparatorPos = rPayload.indexOf(',', 6);
+        bool bHasMode = nSeparatorPos > 0;
+        if (bHasMode)
         {
-            int nSeparatorPos = rPayload.indexOf(',', 6);
-            bool bHasMode = nSeparatorPos > 0;
-            if (bHasMode)
-            {
-                aRet.m_nPart = o3tl::toInt32(rPayload.subView(6, nSeparatorPos - 6));
-                assert(rPayload.getLength() > nSeparatorPos);
-                aRet.m_nMode = o3tl::toInt32(rPayload.subView(nSeparatorPos + 1));
-            }
-            else
-            {
-                aRet.m_nPart = o3tl::toInt32(rPayload.subView(6));
-                aRet.m_nMode = 0;
-            }
+            aRet.m_nPart = o3tl::toInt32(rPayload.subView(6, nSeparatorPos - 6));
+            assert(rPayload.getLength() > nSeparatorPos);
+            aRet.m_nMode = o3tl::toInt32(rPayload.subView(nSeparatorPos + 1));
+        }
+        else
+        {
+            aRet.m_nPart = o3tl::toInt32(rPayload.subView(6));
+            aRet.m_nMode = 0;
         }
 
         return aRet;
@@ -612,25 +610,22 @@ RectangleAndPart RectangleAndPart::Create(const OString& rPayload)
         ++pos;
     assert(pos < end);
     tools::Long nHeight = rtl_str_toInt64_WithLength(pos, 10, end - pos);
-    tools::Long nPart = INT_MIN;
     tools::Long nMode = 0;
-    if (comphelper::COKit::isPartInInvalidation())
-    {
-        while (pos < end && *pos != ',')
-            ++pos;
-        if (pos < end)
-            ++pos;
-        assert(pos < end);
-        nPart = rtl_str_toInt64_WithLength(pos, 10, end - pos);
 
-        while (pos < end && *pos != ',')
-            ++pos;
-        if (pos < end)
-        {
-            ++pos;
-            assert(pos < end);
-            nMode = rtl_str_toInt64_WithLength(pos, 10, end - pos);
-        }
+    while (pos < end && *pos != ',')
+        ++pos;
+    if (pos < end)
+        ++pos;
+    assert(pos < end);
+    tools::Long nPart = rtl_str_toInt64_WithLength(pos, 10, end - pos);
+
+    while (pos < end && *pos != ',')
+        ++pos;
+    if (pos < end)
+    {
+        ++pos;
+        assert(pos < end);
+        nMode = rtl_str_toInt64_WithLength(pos, 10, end - pos);
     }
 
     aRet.m_aRectangle = SanitizedRectangle(nLeft, nTop, nWidth, nHeight);
@@ -2076,22 +2071,7 @@ void CallbackFlushHandler::setUpdatedTypePerViewId( COKitCallbackType eType, int
 void CallbackFlushHandler::resetUpdatedTypePerViewId( COKitCallbackType eType, int nViewId )
 {
     assert(isUpdatedTypePerViewId(eType));
-    bool allViewIds = false;
-    // Handle specially messages that do not have viewId for backwards compatibility.
-    if( eType == COKitCallbackType::INVALIDATE_VISIBLE_CURSOR && !comphelper::COKit::isViewIdForVisCursorInvalidation())
-        allViewIds = true;
-    if( !allViewIds )
-    {
-        setUpdatedTypePerViewId( eType, nViewId, -1, false );
-        return;
-    }
-    for( auto& it : m_updatedTypesPerViewId )
-    {
-        std::vector<PerViewIdData>& types = it.second;
-        const size_t nIndex = static_cast<size_t>(eType);
-        if( types.size() >= nIndex )
-            types[ nIndex ].set = false;
-    }
+    setUpdatedTypePerViewId( eType, nViewId, -1, false );
 }
 
 void CallbackFlushHandler::viewCallback(COKitCallbackType eType, const OString& pPayload)
@@ -3242,7 +3222,7 @@ static bool lo_getGlobalClipboard(COKit* pThis, const char** pMimeTypes, size_t*
                                   char*** pOutMimeTypes, size_t** pOutSizes, char*** pOutStreams);
 
 static void lo_executeScript(
-    char const * script, char ** result, char ** error,
+    char const * script, std::string_view source, int line, char ** result, char ** error,
     void (*proxyCallback) (void * data, char const * payload), void * proxyCallbackData,
     bool * usedLegacyUnoApi);
 static void lo_deliverProxyResult(char const * callId, char const * jsonValue);
@@ -3387,11 +3367,13 @@ void COKitImpl::registerFileSaveDialogCallback(COKitFileSaveDialogCallback pCall
     lo_registerFileSaveDialogCallback(this, pCallback);
 }
 
-void COKitImpl::executeScript(char const * script, char ** result, char ** error,
+void COKitImpl::executeScript(char const * script, std::string_view source, int line,
+                              char ** result, char ** error,
                                void (*proxyCallback) (void * data, char const * payload),
                                void * proxyCallbackData, bool * usedLegacyUnoApi)
 {
-    lo_executeScript(script, result, error, proxyCallback, proxyCallbackData, usedLegacyUnoApi);
+    lo_executeScript(
+        script, source, line, result, error, proxyCallback, proxyCallbackData, usedLegacyUnoApi);
 }
 
 void COKitImpl::deliverProxyResult(char const * callId, char const * jsonValue)
@@ -6418,7 +6400,20 @@ static void doc_postUnoCommand(COKitDocument* pThis, const char* pCommand, const
     OUString aCommand(pCommand, strlen(pCommand), RTL_TEXTENCODING_UTF8);
 
     if (!isCommandAllowed(aCommand))
+    {
+        if (aCommand == ".uno:Save")
+        {
+            COKitDocumentImpl* pRefusedDocument = static_cast<COKitDocumentImpl*>(pThis);
+            tools::JsonWriter aJson;
+            aJson.put("commandName", pCommand);
+            aJson.put("success", false);
+            lcl_reportSaveResult(pRefusedDocument,
+                                 KitHelper::getViewId(pRefusedDocument->mnDocumentId),
+                                 aJson.finishAndGetAsOString());
+        }
+
         return;
+    }
 
     if (gImpl && aCommand == ".uno:None")
         return;
@@ -9061,7 +9056,7 @@ static void doc_setColorPreviewState(SAL_UNUSED_PARAMETER COKitDocument* /*pThis
 }
 
 static void lo_executeScript(
-    char const * script, char ** result, char ** error,
+    char const * script, std::string_view source, int line, char ** result, char ** error,
     void (*proxyCallback) (void * data, char const * payload), void * proxyCallbackData,
     bool * usedLegacyUnoApi)
 {
@@ -9081,16 +9076,37 @@ static void lo_executeScript(
     }
     try {
         OUString value = jsuno::execute(
-            OUString::fromUtf8(script), std::move(hook), usedLegacyUnoApi);
+            OUString::fromUtf8(script), OUString::fromUtf8(source), line, std::move(hook),
+            usedLegacyUnoApi);
         if (!value.isEmpty()) {
             *result = convertOUString(value);
         }
+    } catch (jsuno::Exception const & exception) {
+        // Ship as a JSON object; the receiver (ChildSession::executeScript) recognises the leading
+        // '{' and splices it in as a JSON value rather than an escaped string.
+        SetLastExceptionMsg(exception.message);
+        tools::JsonWriter w;
+        w.put("message", exception.message);
+        w.put("name", exception.name);
+        {
+            auto const frames = w.startArray("stack");
+            for (auto const & f: exception.stack) {
+                auto const obj = w.startStruct();
+                w.put("source", f.source);
+                w.put("line", f.line);
+                w.put("column", f.column);
+                w.put("functionName", f.functionName);
+            }
+        }
+        *error = strdup(w.finishAndGetAsOString().getStr());
     } catch (cpo::uno::Exception const & exception) {
         SetLastExceptionMsg(exception.Message);
         *error = convertOUString(exception.Message);
     }
 #else
     (void) script;
+    (void) source;
+    (void) line;
     (void) proxyCallback;
     (void) proxyCallbackData;
     (void) usedLegacyUnoApi;
@@ -9151,15 +9167,9 @@ static void lo_setOptionalFeatures(COKit* pThis, COKitOptionalFeatures const fea
 
     COKitImpl *const pLib = static_cast<COKitImpl*>(pThis);
     pLib->mOptionalFeatures = features;
-    if ((features & COKitOptionalFeatures::PART_IN_INVALIDATION_CALLBACK)
-        != COKitOptionalFeatures::NONE)
-        comphelper::COKit::setPartInInvalidation(true);
     if ((features & COKitOptionalFeatures::RANGE_HEADERS)
         != COKitOptionalFeatures::NONE)
         comphelper::COKit::setRangeHeaders(true);
-    if ((features & COKitOptionalFeatures::VIEWID_IN_VISCURSOR_INVALIDATION_CALLBACK)
-        != COKitOptionalFeatures::NONE)
-        comphelper::COKit::setViewIdForVisCursorInvalidation(true);
 }
 
 static void lo_setDocumentPassword(COKit* pThis,

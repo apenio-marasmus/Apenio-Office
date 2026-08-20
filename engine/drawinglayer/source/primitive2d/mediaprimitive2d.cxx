@@ -47,7 +47,7 @@ namespace drawinglayer::primitive2d
                     return false;
 
                 static const BitmapChecksum nEmptyLogoChecksum(
-                    Graphic(Bitmap(u"avmedia/res/avemptylogo.png"_ustr)).GetChecksum());
+                    Graphic(Bitmap(u"avmedia/res/play-placeholder.svg"_ustr)).GetChecksum());
                 static const BitmapChecksum nAudioLogoChecksum(
                     Graphic(Bitmap(u"avmedia/res/avaudiologo.png"_ustr)).GetChecksum());
 
@@ -55,9 +55,15 @@ namespace drawinglayer::primitive2d
                 return nChecksum == nEmptyLogoChecksum || nChecksum == nAudioLogoChecksum;
             }
 
-            // Centered, aspect-preserving placement for the fallback icon: up to 3 cm
-            // (in the shape's own 1/100th mm unit) on its longer side, shrunk further if
-            // the shape itself is smaller than that.
+            // The icon takes this share of the shorter side of the shape, so it follows the frame.
+            constexpr double fIconShapeShare(0.25);
+
+            // The sizes it is held between, in the shape's own logic unit: 8 mm and 1.7 cm, which
+            // are about 30 and 64 pixels at 100 percent zoom.
+            constexpr double fIconMinimumSize(800.0);
+            constexpr double fIconMaximumSize(1700.0);
+
+            // Centered, aspect-preserving, and never larger than the shape that holds it.
             basegfx::B2DHomMatrix createPlaceholderIconTransform(
                 const basegfx::B2DHomMatrix& rShapeTransform, const Size& rBitmapSizePixel)
             {
@@ -68,8 +74,10 @@ namespace drawinglayer::primitive2d
                     ? static_cast<double>(rBitmapSizePixel.getWidth()) / rBitmapSizePixel.getHeight()
                     : 1.0);
 
-                constexpr double fMaxSize(3000.0);
-                double fHeight(std::min(fMaxSize, std::min(aShapeRange.getWidth(), aShapeRange.getHeight())));
+                const double fShorterSide(std::min(aShapeRange.getWidth(), aShapeRange.getHeight()));
+
+                double fHeight(std::min(fShorterSide,
+                    std::clamp(fIconShapeShare * fShorterSide, fIconMinimumSize, fIconMaximumSize)));
                 double fWidth(fHeight * fAspect);
 
                 if (fWidth > aShapeRange.getWidth())
@@ -92,6 +100,11 @@ namespace drawinglayer::primitive2d
             Primitive2DContainer xRetval;
             xRetval.resize(1);
 
+            // A generic media placeholder has only a dark background and a small centered
+            // fallback icon. It gets no frame border, so the dark background covers the whole
+            // media object rather than being inset by the border.
+            const bool bIsGenericPlaceholder(isGenericMediaPlaceholder(maSnapshot));
+
             // create background object
             basegfx::B2DPolygon aBackgroundPolygon(basegfx::utils::createUnitPolygon());
             aBackgroundPolygon.transform(getTransform());
@@ -107,7 +120,7 @@ namespace drawinglayer::primitive2d
                 const GraphicAttr aGraphicAttr;
                 xRetval.resize(2);
 
-                if (isGenericMediaPlaceholder(maSnapshot))
+                if (bIsGenericPlaceholder)
                 {
                     xRetval[1] = new GraphicPrimitive2D(
                         createPlaceholderIconTransform(getTransform(), maSnapshot.GetSizePixel()),
@@ -119,7 +132,7 @@ namespace drawinglayer::primitive2d
                 }
             }
 
-            if(getDiscreteBorder())
+            if(getDiscreteBorder() && !bIsGenericPlaceholder)
             {
                 const basegfx::B2DVector aDiscreteInLogic(rViewInformation.getInverseObjectToViewTransformation() *
                     basegfx::B2DVector(static_cast<double>(getDiscreteBorder()), static_cast<double>(getDiscreteBorder())));
@@ -192,7 +205,9 @@ namespace drawinglayer::primitive2d
             basegfx::B2DRange aRetval(0.0, 0.0, 1.0, 1.0);
             aRetval.transform(getTransform());
 
-            if(getDiscreteBorder())
+            // A generic placeholder is drawn without the frame border, so its range stays the
+            // full media object range and is not shrunk here either.
+            if(getDiscreteBorder() && !isGenericMediaPlaceholder(maSnapshot))
             {
                 const basegfx::B2DVector aDiscreteInLogic(rViewInformation.getInverseObjectToViewTransformation() *
                     basegfx::B2DVector(static_cast<double>(getDiscreteBorder()), static_cast<double>(getDiscreteBorder())));

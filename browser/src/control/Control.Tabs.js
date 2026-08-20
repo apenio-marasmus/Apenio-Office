@@ -81,7 +81,7 @@ window.L.Control.Tabs = window.L.Control.extend({
 					return !this._isProtectedSheet(this._tabForContextMenu);
 				}.bind(this),
 				_uno: '.uno:RenameTable',
-				_image: 'Name',
+				_image: 'RenameTable',
 			},
 			'.uno:DuplicateSheet': {
 				name: app.IconUtil.createMenuItemLink(_UNO('.uno:DuplicateSheet', 'spreadsheet', true), 'DuplicateSheet'),
@@ -255,10 +255,6 @@ window.L.Control.Tabs = window.L.Control.extend({
 					);
 				}
 
-				if (window.mode.isSmallScreenDevice()) {
-					var menuData = window.L.Control.JSDialogBuilder.getMenuStructureForMobileWizard(menuItemMobile, true, '');
-				}
-
 				for (var i = 0; i < parts; i++) {
 					// Skip if hidden or a sheet view (implicitly hidden)
 					if (app.calc.isPartHidden(i) || app.calc.isPartSheetView(i))
@@ -282,6 +278,9 @@ window.L.Control.Tabs = window.L.Control.extend({
 									if (!this._map.isReadOnlyMode()) {
 										if (window.mode.isSmallScreenDevice()) {
 											window.contextMenuWizard = true;
+											// Build the structure now, so entries that depend on the
+											// pressed tab like "Protect Sheet..." get a valid state.
+											const menuData = window.L.Control.JSDialogBuilder.getMenuStructureForMobileWizard(menuItemMobile, true, '');
 											this._map.fire('mobilewizard', {data: menuData});
 										} else {
 											this._openTabContextMenu(e);

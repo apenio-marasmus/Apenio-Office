@@ -407,19 +407,21 @@ window.L.Map.Keyboard = window.L.Handler.extend({
 		if (ev.charCode == 0) {
 			this._handleKeyEvent(ev);
 		}
-		if (this._map._docLayer)
-			if (ev.shiftKey && ev.type === 'keydown')
+		if (this._map._docLayer) {
+			if (ev.shiftKey && ev.type === 'keydown') {
 				this._map._docLayer.shiftKeyPressed = true;
-			else if (ev.keyCode === this.keyCodes.SHIFT && ev.type === 'keyup')
+			} else if (ev.keyCode === this.keyCodes.SHIFT && ev.type === 'keyup') {
 				this._map._docLayer.shiftKeyPressed = false;
+			}
+		}
 		if (completeEvent)
 			completeEvent.finish();
 	},
 
-	_globalKeyEvent: function(ev) {
-		if (this._map.uiManager.isUIBlocked())
-			return;
-
+	// _updateAccessibilityOnKeyDown - lets the accessibility helpers of both
+	// user interfaces record the key that went down. They keep state of their
+	// own and leave the event itself untouched.
+	_updateAccessibilityOnKeyDown: function(ev) {
 		if (app.UI.notebookbarAccessibility) {
 			app.UI.notebookbarAccessibility.onDocumentKeyDown(ev);
 		}
@@ -427,17 +429,30 @@ window.L.Map.Keyboard = window.L.Handler.extend({
 		if (app.UI.compactViewAccessibility) {
 			app.UI.compactViewAccessibility.onDocumentKeyDown(ev);
 		}
+	},
+
+	// _hideTooltipOnPaging - takes the tooltip away while the user moves
+	// through the document a page at a time.
+	_hideTooltipOnPaging: function(ev) {
+		if (ev.keyCode === this.keyCodes.PAGEUP || ev.keyCode === this.keyCodes.PAGEDOWN) {
+			if (this._map && this._map.tooltip) {
+				this._map.tooltip.hide();
+			}
+		}
+	},
+
+	_globalKeyEvent: function(ev) {
+		if (this._map.uiManager.isUIBlocked())
+			return;
+
+		this._updateAccessibilityOnKeyDown(ev);
 
 		if (ev.shortCutActivated === true) {
 			window.app.console.log('Shortcut for: ' + ev.code + ' already handled');
 			return;
 		}
 
-		if (ev.keyCode === this.keyCodes.PAGEUP || ev.keyCode === this.keyCodes.PAGEDOWN) {
-			if (this._map && this._map.tooltip) {
-				this._map.tooltip.hide();
-			}
-		}
+		this._hideTooltipOnPaging(ev);
 
 		if (window.KeyboardShortcuts.processEvent(app.UI.language.fromURL, ev)) {
 			return;

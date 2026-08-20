@@ -123,7 +123,7 @@ MOCHA_SRC_DEPS = $(shell find $(srcdir)/src $(srcdir)/js \( -name '*.ts' -o -nam
 # tsc can report a failure, but still create a .js and a second make attempt will succeed,
 # so if this returns an error then delete the target
 $(MOCHA_JS_DIR)/main.js: $(MOCHA_DIR)/main.ts $(wildcard $(MOCHA_DIR)/*.ts $(MOCHA_DIR)/*/*.ts) $(MOCHA_SRC_DEPS)
-	$(QUIET_TSC) $(builddir)/node_modules/typescript/bin/tsc $< --outfile $@ --module none --moduleResolution node --lib dom,es2016 --target ES5 --downlevelIteration --allowJs --jsx react --jsxFactory h --jsxFragmentFactory Fragment || (rm -f $@ && false)
+	$(QUIET_TSC) $(NODE) $(builddir)/node_modules/typescript/bin/tsc $< --outfile $@ --module none --moduleResolution node --lib dom,es2016 --target ES5 --downlevelIteration --allowJs --jsx react --jsxFactory h --jsxFragmentFactory Fragment || (rm -f $@ && false)
 
 JQUERY_LIGHTNESS_IMAGE_PATH = $(srcdir)/images/jquery-ui-lightness
 JQUERY_LIGHTNESS_IMAGES = $(wildcard $(JQUERY_LIGHTNESS_IMAGE_PATH)/*.png)
@@ -657,7 +657,7 @@ COOL_JS_LST =\
 	src/control/jsdialog/Widget.FixedTextControl.ts \
 	src/control/jsdialog/Widget.ScrolledWindow.js \
 	src/control/jsdialog/Widget.SearchEdit.ts \
-	src/control/jsdialog/Widget.SidebarContainers.ts \
+	src/control/jsdialog/Widget.SidebarContainers.tsx \
 	src/control/jsdialog/Widget.TabControl.tsx \
 	src/control/jsdialog/Widget.Toolitem.ts \
 	src/control/jsdialog/Widget.Text.ts \
@@ -1394,6 +1394,7 @@ tsc-strict.done: $(COOL_JS_SRC) $(COOL_TS_SRC) $(COOL_TSX_SRC)
 	@touch $@
 
 tscompile.done: tsc-emit.done tsc-strict.done
+	touch $(MOCHA_DIR)/main.ts
 	@touch $@
 
 $(COOL_TS_JS_DST): tscompile.done
@@ -1609,7 +1610,7 @@ pot:
 		src/control/jsdialog/Widget.Comment.ts \
 		src/control/jsdialog/Widget.SpinField.ts \
 		src/control/jsdialog/Widget.FixedTextControl.ts \
-		src/control/jsdialog/Widget.SidebarContainers.ts \
+		src/control/jsdialog/Widget.SidebarContainers.tsx \
 		src/control/jsdialog/Widget.TreeView.ts \
 		src/app/QueuedSocket.ts \
 		src/app/DelaySocket.ts \

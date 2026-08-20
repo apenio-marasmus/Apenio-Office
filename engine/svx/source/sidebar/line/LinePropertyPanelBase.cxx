@@ -19,17 +19,40 @@
 
 #include <memory>
 #include <svx/sidebar/LinePropertyPanelBase.hxx>
+#include <sfx2/objsh.hxx>
 #include <sfx2/weldutils.hxx>
+#include <svx/dialmgr.hxx>
+#include <svx/drawitem.hxx>
 #include <svx/linectrl.hxx>
+#include <svx/strings.hrc>
+#include <svx/svxids.hrc>
+#include <svx/xlnstit.hxx>
+#include <svx/xlnedit.hxx>
 #include <svx/xlnwtit.hxx>
 #include <svx/xlntrit.hxx>
 #include <svx/xlncapit.hxx>
 #include <svx/xlinjoit.hxx>
+#include <svx/unoapi.hxx>
+#include <svx/xdef.hxx>
+#include <svx/xtable.hxx>
+#include <comphelper/dispatchcommand.hxx>
+#include <comphelper/kit.hxx>
+#include <com/sun/star/beans/PropertyValue.hpp>
+#include <vcl/bitmap.hxx>
+#include <vcl/settings.hxx>
+#include <vcl/svapp.hxx>
 
 using namespace css;
 using namespace css::uno;
 
 constexpr OUString SELECTWIDTH = u"SelectWidth"_ustr;
+
+constexpr OUString ARROW_STYLES[]
+    = { u"Arrow"_ustr,  u"Line"_ustr,      u"Circle"_ustr,
+        u"Square"_ustr, u"Square 45"_ustr, u"Diamond"_ustr };
+
+constexpr OUString NONE_ID = u"none"_ustr;
+constexpr OUString MORE_STYLES_ID = u"more"_ustr;
 
 namespace svx::sidebar {
 
@@ -71,13 +94,15 @@ LinePropertyPanelBase::LinePropertyPanelBase(
     mxLineStyleTB(m_xBuilder->weld_toolbar(u"linestyle"_ustr)),
     mxLineStyleDispatch(new ToolbarUnoDispatcher(*mxLineStyleTB, *m_xBuilder, rxFrame)),
     mnWidthCoreValue(0),
+    mxFrame(rxFrame),
     mxFTWidth(m_xBuilder->weld_label(u"widthlabel"_ustr)),
     mxTBWidth(m_xBuilder->weld_toolbar(u"width"_ustr)),
     mxFTTransparency(m_xBuilder->weld_label(u"translabel"_ustr)),
     mxMFTransparent(m_xBuilder->weld_metric_spin_button(u"linetransparency"_ustr, FieldUnit::PERCENT)),
-    mxArrowHeadStyleFT(m_xBuilder->weld_label(u"arrowlabel"_ustr)),
-    mxArrowHeadStyleTB(m_xBuilder->weld_toolbar(u"arrowheadstyle"_ustr)),
-    mxArrowHeadStyleDispatch(new ToolbarUnoDispatcher(*mxArrowHeadStyleTB, *m_xBuilder, rxFrame)),
+    mxArrowStartFT(m_xBuilder->weld_label(u"startarrowlabel"_ustr)),
+    mxArrowEndFT(m_xBuilder->weld_label(u"endarrowlabel"_ustr)),
+    mxLBStart(m_xBuilder->weld_combo_box(u"startarrowstyle"_ustr)),
+    mxLBEnd(m_xBuilder->weld_combo_box(u"endarrowstyle"_ustr)),
     mxLineWidthPopup(new LineWidthPopup(mxTBWidth.get(), *this)),
     mxLineStyleNoneChange(new LineStyleNoneChange(*this)),
     mnTrans(0),
@@ -100,9 +125,10 @@ LinePropertyPanelBase::~LinePropertyPanelBase()
     mxMFTransparent.reset();
     mxLineStyleDispatch.reset();
     mxLineStyleTB.reset();
-    mxArrowHeadStyleDispatch.reset();
-    mxArrowHeadStyleTB.reset();
-    mxArrowHeadStyleFT.reset();
+    mxLBStart.reset();
+    mxLBEnd.reset();
+    mxArrowStartFT.reset();
+    mxArrowEndFT.reset();
 }
 
 void LinePropertyPanelBase::Initialize()
@@ -113,6 +139,17 @@ void LinePropertyPanelBase::Initialize()
     mxTBWidth->connect_menu_toggled(LINK(this, LinePropertyPanelBase, ToolboxWidthToggleMenuHdl));
 
     mxMFTransparent->connect_value_changed(LINK(this, LinePropertyPanelBase, ChangeTransparentHdl));
+
+    mxLBStart->connect_changed(LINK(this, LinePropertyPanelBase, ChangeStartHdl));
+    mxLBEnd->connect_changed(LINK(this, LinePropertyPanelBase, ChangeEndHdl));
+
+    // Draw an arrow preview in front of each style name in the dropdown.
+    mxLBStart->connect_custom_get_size(LINK(this, LinePropertyPanelBase, GetSizeHdl));
+    mxLBEnd->connect_custom_get_size(LINK(this, LinePropertyPanelBase, GetSizeHdl));
+    mxLBStart->connect_custom_render(LINK(this, LinePropertyPanelBase, RenderStartHdl));
+    mxLBEnd->connect_custom_render(LINK(this, LinePropertyPanelBase, RenderEndHdl));
+    mxLBStart->set_custom_renderer(true);
+    mxLBEnd->set_custom_renderer(true);
 
     SvxLineStyleToolBoxControl* pLineStyleControl = getLineStyleToolBoxControl(*mxLineStyleDispatch);
     pLineStyleControl->setLineStyleIsNoneFunction(*mxLineStyleNoneChange);
@@ -206,10 +243,261 @@ void LinePropertyPanelBase::SetWidth(tools::Long nWidth)
 
 void LinePropertyPanelBase::ActivateControls()
 {
-    mxArrowHeadStyleTB->set_item_sensitive(u".uno:LineEndStyle"_ustr, !mbNoneLineStyle);
+    mxLBStart->set_sensitive(!mbNoneLineStyle);
+    mxLBEnd->set_sensitive(!mbNoneLineStyle);
 
-    mxArrowHeadStyleFT->set_visible(mbArrowSupported);
-    mxArrowHeadStyleTB->set_item_visible(u".uno:LineEndStyle"_ustr, mbArrowSupported);
+    mxArrowStartFT->set_visible(mbArrowSupported);
+    mxArrowEndFT->set_visible(mbArrowSupported);
+    mxLBStart->set_visible(mbArrowSupported);
+    mxLBEnd->set_visible(mbArrowSupported);
+}
+
+void LinePropertyPanelBase::FillLineEndListBox(weld::ComboBox& rListBox)
+{
+    rListBox.freeze();
+    rListBox.clear();
+
+    rListBox.append(NONE_ID, comphelper::COKit::isActive() ? SvxResId(RID_SVXSTR_INVISIBLE)
+                                                           : SvxResId(RID_SVXSTR_NONE));
+
+    if (mxLineEndList.is())
+    {
+        const tools::Long nCount = mxLineEndList->Count();
+        for (const OUString& rApiName : ARROW_STYLES)
+        {
+            for (tools::Long i = 0; i < nCount; ++i)
+            {
+                const OUString& rName = mxLineEndList->GetLineEnd(i)->GetName();
+                if (SvxUnogetApiNameForItem(sal_uInt16(XATTR_LINEEND), rName) != rApiName)
+                    continue;
+
+                rListBox.append(OUString::number(i), rName);
+                break;
+            }
+        }
+    }
+
+    rListBox.append_separator(OUString());
+    rListBox.append(MORE_STYLES_ID, SvxResId(RID_SVXSTR_MORE_STYLES));
+
+    rListBox.thaw();
+}
+
+void LinePropertyPanelBase::SelectLineEndEntry(
+    weld::ComboBox& rListBox, const std::optional<basegfx::B2DPolyPolygon>& roPolygon)
+{
+    if (roPolygon && !roPolygon->count())
+    {
+        rListBox.set_active(rListBox.find_id(NONE_ID));
+        rListBox.save_value();
+        return;
+    }
+
+    if (roPolygon && mxLineEndList.is())
+    {
+        const tools::Long nCount = mxLineEndList->Count();
+        for (tools::Long i = 0; i < nCount; ++i)
+        {
+            const XLineEndEntry* pEntry = mxLineEndList->GetLineEnd(i);
+            if (pEntry->GetLineEnd() != *roPolygon)
+                continue;
+
+            const int nPos = rListBox.find_id(OUString::number(i));
+            if (nPos != -1)
+            {
+                rListBox.set_active(nPos);
+                rListBox.save_value();
+                return;
+            }
+
+            rListBox.set_active(-1);
+            rListBox.set_entry_text(pEntry->GetName());
+            rListBox.save_value();
+            return;
+        }
+    }
+
+    rListBox.set_active(-1);
+    rListBox.set_entry_text(OUString());
+    rListBox.save_value();
+}
+
+const XLineEndEntry* LinePropertyPanelBase::GetSelectedLineEnd(const weld::ComboBox& rListBox) const
+{
+    if (!mxLineEndList.is())
+        return nullptr;
+
+    const OUString sId = rListBox.get_active_id();
+    if (sId.isEmpty() || sId == NONE_ID || sId == MORE_STYLES_ID)
+        return nullptr;
+
+    const tools::Long nIndex = sId.toInt32();
+    if (nIndex < 0 || nIndex >= mxLineEndList->Count())
+        return nullptr;
+
+    return mxLineEndList->GetLineEnd(nIndex);
+}
+
+void LinePropertyPanelBase::updateLineStart(bool /*bDisabled*/, bool bSetOrDefault,
+                                            const SfxPoolItem* pState)
+{
+    moStartPolygon.reset();
+    if (bSetOrDefault)
+    {
+        if (const XLineStartItem* pItem = dynamic_cast<const XLineStartItem*>(pState))
+            moStartPolygon = pItem->GetLineStartValue();
+    }
+    SelectLineEndEntry(*mxLBStart, moStartPolygon);
+}
+
+void LinePropertyPanelBase::updateLineEnd(bool /*bDisabled*/, bool bSetOrDefault,
+                                          const SfxPoolItem* pState)
+{
+    moEndPolygon.reset();
+    if (bSetOrDefault)
+    {
+        if (const XLineEndItem* pItem = dynamic_cast<const XLineEndItem*>(pState))
+            moEndPolygon = pItem->GetLineEndValue();
+    }
+    SelectLineEndEntry(*mxLBEnd, moEndPolygon);
+}
+
+void LinePropertyPanelBase::updateLineEndList(const SfxPoolItem* /*pState*/)
+{
+    // The line-end list is not delivered through the ControllerItem's item
+    // state (pState is null for list slots); fetch it from the object shell,
+    // the same way AreaPropertyPanelBase obtains the gradient/hatch lists.
+    if (const SfxObjectShell* pSh = SfxObjectShell::Current())
+    {
+        if (const SvxLineEndListItem* pItem = pSh->GetItem(SID_LINEEND_LIST))
+            mxLineEndList = pItem->GetLineEndList();
+    }
+
+    FillLineEndListBox(*mxLBStart);
+    FillLineEndListBox(*mxLBEnd);
+
+    // reselect according to the last known start/end arrows
+    SelectLineEndEntry(*mxLBStart, moStartPolygon);
+    SelectLineEndEntry(*mxLBEnd, moEndPolygon);
+}
+
+void LinePropertyPanelBase::RenderLineEndEntry(const weld::ComboBox::render_args& rArgs, bool bStart)
+{
+    vcl::RenderContext& rDevice = std::get<0>(rArgs);
+    const tools::Rectangle& rRect = std::get<1>(rArgs);
+    const OUString& rId = std::get<3>(rArgs);
+
+    if (rId == MORE_STYLES_ID)
+        return;
+
+    const tools::Long nMidY = rRect.Top() + rRect.GetHeight() / 2;
+
+    if (rId == NONE_ID)
+    {
+        // "no arrowhead": a short plain line stub
+        rDevice.SetLineColor(Application::GetSettings().GetStyleSettings().GetFieldTextColor());
+        rDevice.DrawLine(Point(rRect.Left() + 2, nMidY), Point(rRect.Left() + 16, nMidY));
+        return;
+    }
+
+    if (!mxLineEndList.is())
+        return;
+
+    const tools::Long nIndex = rId.toInt32();
+    if (nIndex < 0 || nIndex >= mxLineEndList->Count())
+        return;
+
+    const Bitmap aBitmap = mxLineEndList->GetUiBitmap(nIndex);
+    if (aBitmap.IsEmpty())
+        return;
+
+    const Size aBmpSize(aBitmap.GetSizePixel());
+    const tools::Long nHalfW = aBmpSize.Width() / 2;
+    const Point aSrcPt(bStart ? 0 : nHalfW, 0);
+    const Size aHalfSize(nHalfW, aBmpSize.Height());
+    rDevice.DrawBitmap(Point(rRect.Left() + 2, nMidY - aBmpSize.Height() / 2), aHalfSize, aSrcPt,
+                       aHalfSize, aBitmap);
+}
+
+IMPL_LINK(LinePropertyPanelBase, RenderStartHdl, weld::ComboBox::render_args, aArgs, void)
+{
+    RenderLineEndEntry(aArgs, true);
+}
+
+IMPL_LINK(LinePropertyPanelBase, RenderEndHdl, weld::ComboBox::render_args, aArgs, void)
+{
+    RenderLineEndEntry(aArgs, false);
+}
+
+IMPL_LINK(LinePropertyPanelBase, GetSizeHdl, vcl::RenderContext&, rDevice, Size)
+{
+    tools::Long nImgWidth = 16; // fallback for the "none" line stub
+    tools::Long nHeight = rDevice.GetTextHeight();
+
+    if (mxLineEndList.is())
+    {
+        const tools::Long nCount = mxLineEndList->Count();
+        for (tools::Long i = 0; i < nCount; ++i)
+        {
+            const Bitmap aBmp = mxLineEndList->GetUiBitmap(i);
+            if (!aBmp.IsEmpty())
+            {
+                nImgWidth = std::max<tools::Long>(nImgWidth, aBmp.GetSizePixel().Width() / 2);
+                nHeight = std::max<tools::Long>(nHeight, aBmp.GetSizePixel().Height());
+            }
+        }
+    }
+
+    return Size(nImgWidth + 4, nHeight + 4);
+}
+
+template <class ItemType>
+std::optional<ItemType>
+LinePropertyPanelBase::PickLineEnd(weld::ComboBox& rListBox,
+                                   std::optional<basegfx::B2DPolyPolygon>& roPolygon)
+{
+    const OUString sId = rListBox.get_active_id();
+
+    if (sId == MORE_STYLES_ID)
+    {
+        SelectLineEndEntry(rListBox, roPolygon);
+        comphelper::dispatchCommand(u".uno:FormatLine"_ustr, mxFrame, {});
+        return {};
+    }
+
+    basegfx::B2DPolyPolygon aPolygon;
+    std::optional<ItemType> oItem;
+
+    if (sId == NONE_ID)
+        oItem.emplace();
+    else if (const XLineEndEntry* pLineEnd = GetSelectedLineEnd(rListBox))
+    {
+        aPolygon = pLineEnd->GetLineEnd();
+        oItem.emplace(pLineEnd->GetName(), aPolygon);
+    }
+
+    if (oItem)
+    {
+        roPolygon = aPolygon;
+        rListBox.save_value();
+    }
+
+    return oItem;
+}
+
+IMPL_LINK_NOARG(LinePropertyPanelBase, ChangeStartHdl, weld::ComboBox&, void)
+{
+    const std::optional<XLineStartItem> oItem
+        = PickLineEnd<XLineStartItem>(*mxLBStart, moStartPolygon);
+    if (oItem)
+        setLineStart(*oItem);
+}
+
+IMPL_LINK_NOARG(LinePropertyPanelBase, ChangeEndHdl, weld::ComboBox&, void)
+{
+    const std::optional<XLineEndItem> oItem = PickLineEnd<XLineEndItem>(*mxLBEnd, moEndPolygon);
+    if (oItem)
+        setLineEnd(*oItem);
 }
 
 void LinePropertyPanelBase::setMapUnit(MapUnit eMapUnit)

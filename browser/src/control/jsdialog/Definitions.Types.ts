@@ -278,6 +278,7 @@ interface MenuDefinition extends WidgetJSON {
 	pos?: number | string; // identifier of an entry
 	class?: string; // extra CSS class to add to the rendered entry
 	shortcut?: string; // keyboard shortcut to display right-aligned next to the entry
+	separatorAfter?: boolean; // draw a separator below this entry
 }
 
 interface HtmlContentJson extends WidgetJSON {
@@ -363,6 +364,7 @@ interface PanelWidgetJSON extends WidgetJSON {
 	command: string; // command to trigger options for a panel
 	text: string; // panel title
 	name?: string; // legacy panel id
+	closeCommand?: string; // UNO command that leaves the panel's deck
 }
 
 type ExpanderWidgetJSON = any;
@@ -441,6 +443,9 @@ interface ComboBoxWidget extends WidgetJSON {
 	selectedEntries?: Array<number>;
 	command?: string;
 	customEntryRenderer?: boolean;
+	renderSelectedEntry?: boolean;
+	separators?: Array<string | number>;
+	entrycompletion?: boolean;
 }
 
 interface TreeColumnJSON {

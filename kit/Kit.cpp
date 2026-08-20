@@ -647,6 +647,49 @@ namespace
         }
     }
 
+    /// Shared configuration presets. A pair of staging directory and engine installation directory.
+    constexpr std::pair<std::string_view, std::string_view> SharedPresetGroups[] = {
+        { "autotext", "share/autotext/common" },
+        { "wordbook", "share/wordbook" },
+        { "template", "share/template/common/presnt" },
+    };
+
+    std::string sharedPresetSource(const std::string& configIdPresets, std::string_view group)
+    {
+        return Poco::Path(configIdPresets, std::string(group)).toString();
+    }
+
+    bool hasSharedPresets(const std::string& configIdPresets)
+    {
+        for (const auto& group : SharedPresetGroups)
+        {
+            if (!FileUtil::isEmptyDirectory(sharedPresetSource(configIdPresets, group.first)))
+                return true;
+        }
+        return false;
+    }
+
+    std::string sharedPresetDestination(const std::string& loJailDestPath,
+                                        std::string_view sharePath)
+    {
+        return Poco::Path(loJailDestPath, std::string(sharePath)).toString();
+    }
+
+    void linkOrCopySharedPresets(const std::string& configIdPresets,
+                                 const std::string& loJailDestPath,
+                                 const std::string& linkablePath)
+    {
+        for (const auto& [group, sharePath] : SharedPresetGroups)
+        {
+            const std::string source = sharedPresetSource(configIdPresets, group);
+            if (FileUtil::isEmptyDirectory(source))
+                continue;
+
+            const std::string destination = sharedPresetDestination(loJailDestPath, sharePath);
+            linkOrCopy(source, destination + "/", linkablePath, LinkOrCopyType::All);
+        }
+    }
+
 #if CODE_COVERAGE
     std::string childRootForGCDAFiles;
     std::string sourceForGCDAFiles;
@@ -2161,9 +2204,7 @@ std::shared_ptr<COKitDocument> Document::load(const std::shared_ptr<ChildSession
         const COKitOptionalFeatures flags
             = COKitOptionalFeatures::DOCUMENT_PASSWORD
             | COKitOptionalFeatures::DOCUMENT_PASSWORD_TO_MODIFY
-            | COKitOptionalFeatures::PART_IN_INVALIDATION_CALLBACK
-            | COKitOptionalFeatures::RANGE_HEADERS
-            | COKitOptionalFeatures::VIEWID_IN_VISCURSOR_INVALIDATION_CALLBACK;
+            | COKitOptionalFeatures::RANGE_HEADERS;
         _loKit->setOptionalFeatures(flags);
 
         std::string loadUri = uri;
@@ -3518,10 +3559,15 @@ void downloadAsFileSaveDialogCallback(const char* suggestedURI, char* result, si
         return;
     }
 #else
-    // Browser COOL: the kit is chroot'd; this path is jail-doc-root-relative
-    // so WSD's GET handler under /cool/.../<downloadId> can read it back via
-    // FileUtil::buildLocalPathToJail.
-    const std::string baseDir = JAILED_DOCUMENT_ROOT;
+    // Browser COOL: the export lands under the jail's document root, named the
+    // way this process sees it. With a chroot that is the path inside the jail,
+    // and the jail root is empty. Without a chroot, the jail root must be
+    // prepended, taking care not to create consecutive slashes, which break
+    // prefix matches on the path/url.
+    std::string jailRoot = JailRoot;
+    if (!jailRoot.empty() && jailRoot.back() == '/')
+        jailRoot.pop_back();
+    const std::string baseDir = jailRoot + JAILED_DOCUMENT_ROOT;
 #endif
 
     const auto download = FileUtil::createDownloadJailPath(baseDir, filename);
@@ -3851,15 +3897,6 @@ void lokit_main(
             const std::string sharedPresets = Poco::Path(childRoot, JailUtil::CHILDROOT_TMP_SHARED_PRESETS_PATH).toString();
             const std::string configIdPresets = Poco::Path(sharedPresets, Uri::encode(configId)).toString();
 
-            const std::string sharedAutotext = Poco::Path(configIdPresets, "autotext").toString();
-            const std::string loJailDestAutotextPath = Poco::Path(loJailDestPath, "share/autotext/common").toString();
-
-            const std::string sharedWordbook = Poco::Path(configIdPresets, "wordbook").toString();
-            const std::string loJailDestWordbookPath = Poco::Path(loJailDestPath, "share/wordbook").toString();
-
-            const std::string sharedTemplate = Poco::Path(configIdPresets, "template").toString();
-            const std::string loJailDestImpressTemplatePath = Poco::Path(loJailDestPath, "share/template/common/presnt").toString();
-
             const std::string sysTemplateSubDir = Poco::Path(tempRoot, "systemplate-" + jailId).toString();
             const std::string jailEtcDir = Poco::Path(jailPath, "etc").toString();
 
@@ -3967,6 +4004,8 @@ void lokit_main(
                     // bundled dictionaries first so the overlay stays additive
                     // and both jail-setup modes behave the same. A name the
                     // host already provides is left untouched.
+                    const std::string sharedWordbook =
+                        sharedPresetSource(configIdPresets, "wordbook");
                     if (!FileUtil::isEmptyDirectory(sharedWordbook))
                     {
                         const std::string bundledWordbook =
@@ -3990,16 +4029,14 @@ void lokit_main(
                         }
                     }
 
-                    const std::pair<std::string, std::string> presets[] = {
-                        { sharedAutotext, loJailDestAutotextPath },
-                        { sharedWordbook, loJailDestWordbookPath },
-                        { sharedTemplate, loJailDestImpressTemplatePath },
-                    };
-                    for (const auto& [presetSrc, presetDst] : presets)
+                    for (const auto& [group, sharePath] : SharedPresetGroups)
                     {
+                        const std::string presetSrc = sharedPresetSource(configIdPresets, group);
                         if (FileUtil::isEmptyDirectory(presetSrc))
                             continue; // nothing configured for this preset
 
+                        const std::string presetDst =
+                            sharedPresetDestination(loJailDestPath, sharePath);
                         if (!FileUtil::Stat(presetDst).exists())
                         {
                             LOG_WRN("Cannot apply shared preset [" << presetSrc
@@ -4116,15 +4153,7 @@ void lokit_main(
                     // Only copy presets the host actually configured; an empty
                     // source would just make the overlayfs probe stat a
                     // not-yet-created target and log spuriously.
-                    if (!FileUtil::isEmptyDirectory(sharedAutotext))
-                        linkOrCopy(sharedAutotext, loJailDestAutotextPath + "/", linkablePath,
-                                   LinkOrCopyType::All);
-                    if (!FileUtil::isEmptyDirectory(sharedWordbook))
-                        linkOrCopy(sharedWordbook, loJailDestWordbookPath + "/", linkablePath,
-                                   LinkOrCopyType::All);
-                    if (!FileUtil::isEmptyDirectory(sharedTemplate))
-                        linkOrCopy(sharedTemplate, loJailDestImpressTemplatePath + "/", linkablePath,
-                                   LinkOrCopyType::All);
+                    linkOrCopySharedPresets(configIdPresets, loJailDestPath, linkablePath);
                 }
 
 #if CODE_COVERAGE
@@ -4220,15 +4249,57 @@ void lokit_main(
         }
         else // noCapabilities set
         {
-            LOG_INF("Using template ["
-                    << loTemplate << "] as install subpath directly, without chroot jail setup.");
+            // The engine reads the shared presets of a configuration from its installation
+            // tree, so a configuration that carries any needs a specially set up jail.
+            // Link it from the template and copy the presets into it. A configuration
+            // with no shared presets reads the template itself, shared by all such jails.
+            const std::string sharedPresets =
+                Poco::Path(childRoot, JailUtil::CHILDROOT_TMP_SHARED_PRESETS_PATH).toString();
+            const std::string configIdPresets =
+                Poco::Path(sharedPresets, Uri::encode(configId)).toString();
+
+            std::string loInstallation = loTemplate;
+            if (!configId.empty() && hasSharedPresets(configIdPresets))
+            {
+                Poco::Path jailLOInstallation(jailPath, JailUtil::LO_JAIL_SUBPATH);
+                jailLOInstallation.makeDirectory();
+                const std::string linkablePath = childRoot + "/linkable";
+
+                // mark copied installation for deletion
+                JailUtil::markJailCopied(jailPathStr);
+
+                linkOrCopy(loTemplate, jailLOInstallation, linkablePath, LinkOrCopyType::LO);
+
+                loInstallation = jailLOInstallation.toString();
+                while (!loInstallation.empty() && loInstallation.back() == '/')
+                    loInstallation.pop_back();
+
+                linkOrCopySharedPresets(configIdPresets, loInstallation, linkablePath);
+
+                LOG_INF("Using installation [" << loInstallation
+                        << "] linked from template [" << loTemplate
+                        << "], carrying the shared presets of configuration ["
+                        << configId << "].");
+            }
+            else
+            {
+                LOG_INF("Using template [" << loTemplate
+                        << "] as install subpath directly, without chroot jail setup.");
+            }
+
             userdir_url = "file://" + jailPathStr + "tmp/user";
 #ifndef __APPLE__
-            instdir_path = '/' + loTemplate + "/program";
+            instdir_path = '/' + loInstallation + "/program";
 #else
-            instdir_path = '/' + loTemplate + "/Contents/Frameworks";
+            instdir_path = '/' + loInstallation + "/Contents/Frameworks";
 #endif
-            allowedPaths.emplace_back(loTemplate, Landlock::Access::ReadOnlyDir);
+            allowedPaths.emplace_back(loInstallation, Landlock::Access::ReadOnlyDir);
+            if (loInstallation != loTemplate)
+            {
+                // Forkit preloaded the engine from the template, and some of the paths it
+                // resolved then are still read by their own name here.
+                allowedPaths.emplace_back(loTemplate, Landlock::Access::ReadOnlyDir);
+            }
             JailRoot = jailPathStr;
 
             const std::string tmpPath = jailPathStr + "tmp";
