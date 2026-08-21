@@ -9,7 +9,7 @@ describe(['tagdesktop'], 'Sidebar accelerator info boxes', function () {
 
 	before(function () {
 		cy.viewport(1920, 1024);
-		helper.setupAndLoadDocument('impress/sidebar.odp');
+		helper.setupAndLoadDocument('writer/help_dialog.odt');
 		desktopHelper.switchUIToNotebookbar();
 
 		cy.getFrameWindow().then(function (frameWindow) {
@@ -19,14 +19,9 @@ describe(['tagdesktop'], 'Sidebar accelerator info boxes', function () {
 			});
 		});
 
-		// Reopen the deck so core describes the panel again, this time with a listener.
+		// The page widgets live in the Page deck, not in the default Properties one.
 		cy.then(function () {
-			win.app.map.sendUnoCommand('.uno:SidebarDeck.PropertyDeck');
-			return helper.processToIdle(win);
-		});
-
-		cy.then(function () {
-			win.app.map.sendUnoCommand('.uno:SidebarDeck.PropertyDeck');
+			win.app.map.sendUnoCommand('.uno:SidebarDeck.WriterPageDeck');
 			return helper.processToIdle(win);
 		});
 
@@ -56,7 +51,7 @@ describe(['tagdesktop'], 'Sidebar accelerator info boxes', function () {
 		});
 	});
 
-	it('Slide panel widgets show a clash free accelerator combination', function () {
+	it('Page panel widgets show a clash free accelerator combination', function () {
 		const definitions = win.app.UI.notebookbarAccessibility.definitions;
 		const combinations = definitions.sidebarCombinations[win.app.map.getDocType()] || {};
 
