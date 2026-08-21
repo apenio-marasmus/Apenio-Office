@@ -430,6 +430,7 @@ interface RadioButtonWidget extends WidgetJSON {
 
 interface ComboBoxEntry extends MenuDefinition {
 	customRenderer?: boolean; // can render custom preview
+	hidden?: boolean; // a value of the box which its list does not offer
 	selected?: boolean; // is selected
 	comboboxId?: string; // used to reference parent
 	pos: string | number; // identifier of an entry
@@ -444,7 +445,10 @@ interface ComboBoxWidget extends WidgetJSON {
 	command?: string;
 	customEntryRenderer?: boolean;
 	renderSelectedEntry?: boolean;
+	wholeWidthPreview?: boolean;
 	separators?: Array<string | number>;
+	// entries which are values of the box but are not offered in its list
+	hiddenEntries?: Array<string | number>;
 	entrycompletion?: boolean;
 }
 
@@ -577,6 +581,7 @@ interface CheckboxWidgetJSON extends WidgetJSON {
 	text: string;
 	command?: string; // used to just execute uno command or dispatch command instead of sending message
 	commandField?: string; // for commands whose state is a multi-field object: name of the field within that state to bind to
+	commandFieldFlat?: boolean; // send commandField as its own top-level SDI argument instead of wrapping the whole state object
 	checked?: boolean; // checkbox state
 	hidden?: boolean;
 }

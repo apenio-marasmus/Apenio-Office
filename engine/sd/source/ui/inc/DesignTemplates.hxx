@@ -15,10 +15,9 @@
 #include <sddllapi.h>
 #include <xmloff/autolayout.hxx>
 
-#include <cstdint>
-#include <map>
 #include <optional>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -40,7 +39,7 @@ std::vector<std::pair<OUString, OUString>> CollectDesignTemplates();
     final slide on Closing. Unknown means the master's name carries no part
     keyword, so the part is decided from the layout of its example slide
     instead. */
-enum class DesignMasterRole : std::uint8_t
+enum class DesignMasterRole
 {
     Title,
     Divider,
@@ -83,11 +82,11 @@ struct AIDesignManifest
 {
     /// The part each named master plays. Only masters that exist in the template
     /// and carry one of the four part wire names are kept.
-    std::map<OUString, DesignMasterRole> maMasterRoles;
+    std::unordered_map<OUString, DesignMasterRole> maMasterRoles;
     /// A master to prefer for a slide whose intent matches the key. The key is
     /// an opaque lowercase word the model may send; the value names a master
     /// that exists in the template.
-    std::map<OUString, OUString> maIntentMasters;
+    std::unordered_map<OUString, OUString> maIntentMasters;
     /// One sentence describing the image style, used only to compose
     /// image-generation prompts.
     OUString maArtDirection;

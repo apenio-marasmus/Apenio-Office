@@ -24,13 +24,15 @@
 #include <initializer_list>
 #include <map>
 #include <optional>
-#include <set>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <osl/file.hxx>
 #include <rtl/bootstrap.hxx>
+#include <rtl/character.hxx>
 
 #include <avmedia/mediaplayer.hxx>
 
@@ -260,8 +262,7 @@ bool lcl_IsValidDesignTemplateName(const OUString& rName)
     for (sal_Int32 i = 0; i < rName.getLength(); ++i)
     {
         const sal_Unicode cChar = rName[i];
-        const bool bAllowed = (cChar >= 'a' && cChar <= 'z') || (cChar >= 'A' && cChar <= 'Z')
-                              || (cChar >= '0' && cChar <= '9') || cChar == ' ' || cChar == '-'
+        const bool bAllowed = rtl::isAsciiAlphanumeric(cChar) || cChar == ' ' || cChar == '-'
                               || cChar == '_';
         if (!bAllowed)
             return false;
@@ -280,7 +281,7 @@ bool lcl_IsValidDesignIntentWord(const OUString& rWord)
     for (sal_Int32 i = 0; i < rWord.getLength(); ++i)
     {
         const sal_Unicode cChar = rWord[i];
-        if (!((cChar >= 'a' && cChar <= 'z') || cChar == '-'))
+        if (!(rtl::isAsciiLowerCase(cChar) || cChar == '-'))
             return false;
     }
     return true;
@@ -302,7 +303,7 @@ std::vector<std::pair<OUString, OUString>> CollectDesignTemplates()
     };
 
     std::vector<std::pair<OUString, OUString>> aTemplates;
-    std::set<OUString> aSeen;
+    std::unordered_set<OUString> aSeen;
     for (const OUString& rSearchDir : aSearchDirs)
     {
         OUString aDirUrl = rSearchDir;
@@ -447,7 +448,7 @@ std::optional<AIDesignManifest> ReadAIDesignManifest(SdDrawDocument& rTemplate)
 
     // The masters the template actually carries. A manifest entry that names a
     // master the template does not have is dropped.
-    std::set<OUString> aMasterNames;
+    std::unordered_set<OUString> aMasterNames;
     const sal_uInt16 nMasters = rTemplate.GetMasterSdPageCount(PageKind::Standard);
     for (sal_uInt16 i = 0; i < nMasters; ++i)
     {
@@ -533,7 +534,7 @@ std::vector<DesignTemplateMaster> CollectDesignTemplateMasters(SdDrawDocument& r
 
     std::vector<DesignTemplateMaster> aMasters;
     const sal_uInt16 nMasters = rTemplate.GetMasterSdPageCount(PageKind::Standard);
-    std::map<OUString, std::size_t> aIndex;
+    std::unordered_map<OUString, std::size_t> aIndex;
     for (sal_uInt16 i = 0; i < nMasters; ++i)
     {
         const OUString aName = rTemplate.GetMasterSdPage(i, PageKind::Standard)->GetName();
@@ -768,7 +769,7 @@ public:
         // part decided only by an example layout. Gather the body masters with
         // their example layout and usage so a body slide can be matched by
         // layout and, failing that, to the most-used body master.
-        std::map<DesignMasterRole, int> aRolePriority;
+        std::unordered_map<DesignMasterRole, int> aRolePriority;
         for (const DesignTemplateMaster& rMaster : CollectDesignTemplateMasters(rTemplate))
         {
             if (rMaster.meRole == DesignMasterRole::Content)
@@ -877,8 +878,8 @@ private:
     }
 
     OUString maFallback;
-    std::map<DesignMasterRole, OUString> maRoleMaster;
-    std::map<OUString, OUString> maIntentMasters;
+    std::unordered_map<DesignMasterRole, OUString> maRoleMaster;
+    std::unordered_map<OUString, OUString> maIntentMasters;
     std::vector<BodyMaster> maBodyMasters;
 };
 
@@ -948,9 +949,9 @@ struct SlideCommandContext
     int mnActPageId = -1;
     int mnNextPageId = 0;
     std::optional<OUString> moApplyTemplateUrl = std::nullopt;
-    std::map<const SdPage*, DesignMasterRole> maSlideParts = {};
-    std::map<const SdPage*, OUString> maSlideIntents = {};
-    std::set<const SdPage*> maTouchedPages = {};
+    std::unordered_map<const SdPage*, DesignMasterRole> maSlideParts = {};
+    std::unordered_map<const SdPage*, OUString> maSlideIntents = {};
+    std::unordered_set<const SdPage*> maTouchedPages = {};
 
     void touch(const SdPage* pPage)
     {
@@ -3696,7 +3697,7 @@ void DrawViewShell::FuTemporary(SfxRequest& rReq)
                             weld::Window* pWindow = rReq.GetFrameWeld();
                             cpo::uno::Sequence<cpo::uno::Any> aSeq(comphelper::InitAnyPropertySequence(
                             {
-                                {"ParentWindow", pWindow ? cpo::uno::Any(pWindow->GetXWindow()) : cpo::uno::Any(Reference<awt::XWindow>())}
+                                {u"ParentWindow"_ustr, pWindow ? cpo::uno::Any(pWindow->GetXWindow()) : cpo::uno::Any(Reference<awt::XWindow>())}
                             }));
                             xInit->initialize( aSeq );
                         }

@@ -21,6 +21,7 @@
 #include <com/sun/star/chart/XAxisXSupplier.hpp>
 #include <com/sun/star/chart/DataLabelPlacement.hpp>
 #include <com/sun/star/text/XText.hpp>
+#include <com/sun/star/util/XNumberFormatsSupplier.hpp>
 #include <com/sun/star/drawing/FillStyle.hpp>
 
 using namespace css;
@@ -500,6 +501,119 @@ CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testStockChartShiftedCategoryPosition)
     chart2::ScaleData aScaleData = xAxis->getScaleData();
     CPPUNIT_ASSERT(aScaleData.Categories.is());
     CPPUNIT_ASSERT(aScaleData.ShiftedCategoryPosition);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testFunnelChartShiftedCategoryPosition)
+{
+    loadFromFile(u"xlsx/color_funnel.xlsx");
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT_MESSAGE("failed to load chart", xChartDoc.is());
+
+    Reference<chart2::XAxis> xAxis = getAxisFromDoc(xChartDoc, 0, 0, 0);
+    CPPUNIT_ASSERT(xAxis.is());
+
+    chart2::ScaleData aScaleData = xAxis->getScaleData();
+    CPPUNIT_ASSERT(aScaleData.ShiftedCategoryPosition);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testChartexDataLabelOptions)
+{
+    loadFromFile(u"xlsx/funnel-label-options.xlsx");
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XDataSeries> xDataSeries = getDataSeriesFromDoc(xChartDoc, 0);
+    CPPUNIT_ASSERT(xDataSeries.is());
+
+    // Series-level label settings from <cx:dataLabels>
+    Reference<beans::XPropertySet> xSeriesProp(xDataSeries, UNO_QUERY_THROW);
+    chart2::DataPointLabel aLabel;
+    CPPUNIT_ASSERT(xSeriesProp->getPropertyValue(u"Label"_ustr) >>= aLabel);
+    CPPUNIT_ASSERT(aLabel.ShowNumber);
+    CPPUNIT_ASSERT(aLabel.ShowCategoryName);
+    CPPUNIT_ASSERT(!aLabel.ShowSeriesName);
+    CPPUNIT_ASSERT(!aLabel.ShowLegendSymbol);
+    OUString sSeparator;
+    CPPUNIT_ASSERT(xSeriesProp->getPropertyValue(u"LabelSeparator"_ustr) >>= sSeparator);
+    CPPUNIT_ASSERT_EQUAL(u", "_ustr, sSeparator);
+    sal_Int32 nPlacement = -1;
+    CPPUNIT_ASSERT(xSeriesProp->getPropertyValue(u"LabelPlacement"_ustr) >>= nPlacement);
+    CPPUNIT_ASSERT_EQUAL(chart::DataLabelPlacement::CENTER, nPlacement);
+
+    // <cx:dataLabel idx="0" pos="t">: value only, with a percentage number format
+    Reference<beans::XPropertySet> xPoint(xDataSeries->getDataPointByIndex(0), UNO_SET_THROW);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"Label"_ustr) >>= aLabel);
+    CPPUNIT_ASSERT(aLabel.ShowNumber);
+    CPPUNIT_ASSERT(!aLabel.ShowCategoryName);
+    CPPUNIT_ASSERT(!aLabel.ShowSeriesName);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"LabelPlacement"_ustr) >>= nPlacement);
+    CPPUNIT_ASSERT_EQUAL(chart::DataLabelPlacement::TOP, nPlacement);
+    sal_Int32 nNumFmt = -1;
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"NumberFormat"_ustr) >>= nNumFmt);
+    Reference<util::XNumberFormatsSupplier> xNFS(xChartDoc, uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT_EQUAL(xNFS->getNumberFormats()->queryKey(u"0.00%"_ustr, lang::Locale(), false),
+                         nNumFmt);
+
+    // <cx:dataLabel idx="1">: series name only
+    xPoint.set(xDataSeries->getDataPointByIndex(1), UNO_SET_THROW);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"Label"_ustr) >>= aLabel);
+    CPPUNIT_ASSERT(!aLabel.ShowNumber);
+    CPPUNIT_ASSERT(!aLabel.ShowCategoryName);
+    CPPUNIT_ASSERT(aLabel.ShowSeriesName);
+
+    // <cx:dataLabel idx="7" pos="inEnd">
+    xPoint.set(xDataSeries->getDataPointByIndex(7), UNO_SET_THROW);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"LabelPlacement"_ustr) >>= nPlacement);
+    CPPUNIT_ASSERT_EQUAL(chart::DataLabelPlacement::INSIDE, nPlacement);
+
+    // <cx:dataLabel idx="11">: category name only
+    xPoint.set(xDataSeries->getDataPointByIndex(11), UNO_SET_THROW);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"Label"_ustr) >>= aLabel);
+    CPPUNIT_ASSERT(!aLabel.ShowNumber);
+    CPPUNIT_ASSERT(aLabel.ShowCategoryName);
+    CPPUNIT_ASSERT(!aLabel.ShowSeriesName);
+
+    // <cx:dataLabelHidden idx="4">: no label parts are shown
+    xPoint.set(xDataSeries->getDataPointByIndex(4), UNO_SET_THROW);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"Label"_ustr) >>= aLabel);
+    CPPUNIT_ASSERT(!aLabel.ShowNumber);
+    CPPUNIT_ASSERT(!aLabel.ShowNumberInPercent);
+    CPPUNIT_ASSERT(!aLabel.ShowCategoryName);
+    CPPUNIT_ASSERT(!aLabel.ShowLegendSymbol);
+    CPPUNIT_ASSERT(!aLabel.ShowSeriesName);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testFunnelRendering)
+{
+    loadFromFile(u"pptx/funnel-pp1.pptx");
+    Reference<chart::XChartDocument> xChartDoc = getChartDocFromDrawImpress(0, 0);
+    Reference<drawing::XDrawPageSupplier> xDrawPageSupplier(xChartDoc, UNO_QUERY_THROW);
+    Reference<drawing::XDrawPage> xDrawPage(xDrawPageSupplier->getDrawPage(), UNO_SET_THROW);
+    Reference<drawing::XShapes> xShapes(xDrawPage->getByIndex(0), UNO_QUERY_THROW);
+    Reference<drawing::XShape> xSeries(getShapeByName(xShapes, u"CID/D=0:CS=0:CT=0:Series=0"_ustr),
+                                       UNO_SET_THROW);
+
+    Reference<container::XIndexAccess> xIndexAccess(xSeries, UNO_QUERY_THROW);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), xIndexAccess->getCount());
+
+    // Data values of the first series
+    const double aValues[] = { 4.3, 2.5, 3.5, 4.5 };
+
+    Reference<drawing::XShape> xBar0(xIndexAccess->getByIndex(0), UNO_QUERY_THROW);
+    const double fWidth0 = xBar0->getSize().Width;
+    const double fCenter0 = xBar0->getPosition().X + fWidth0 / 2.0;
+    CPPUNIT_ASSERT(fWidth0 > 0);
+
+    for (sal_Int32 i = 1; i < 4; ++i)
+    {
+        Reference<drawing::XShape> xBar(xIndexAccess->getByIndex(i), UNO_QUERY_THROW);
+        const double fWidth = xBar->getSize().Width;
+        const double fCenter = xBar->getPosition().X + fWidth / 2.0;
+        // All bars share a common vertical center line
+        CPPUNIT_ASSERT_DOUBLES_EQUAL(fCenter0, fCenter, 30);
+        // Bar lengths are proportional to the data values
+        CPPUNIT_ASSERT_DOUBLES_EQUAL(aValues[i] / aValues[0], fWidth / fWidth0, 0.02);
+    }
 }
 
 CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testTdf133376)
