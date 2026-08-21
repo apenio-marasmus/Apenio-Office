@@ -30,6 +30,8 @@
 #include <com/sun/star/uno/RuntimeException.hpp>
 #include <cpo/uno/Type.hxx>
 #include <com/sun/star/uno/XInterface.hpp>
+#include <comphelper/json.hxx>
+#include <cpo/uno/Sequence.hxx>
 #include <cpo/uno/genfunc.hxx>
 #include <o3tl/unreachable.hxx>
 #include <rtl/math.hxx>
@@ -39,8 +41,6 @@
 #include <typelib/typedescription.h>
 #include <typelib/typedescription.hxx>
 #include <uno/data.h>
-
-#include "json.hxx"
 
 namespace
 {
@@ -449,7 +449,7 @@ bool splitJsonObject(OUString const& json, std::map<OUString, OUString>& out)
 }
 }
 
-void appendUnoAsJson(OStringBuffer& buf, cpo::uno::Type const& type, void const* value)
+void comphelper::appendUnoAsJson(OStringBuffer& buf, cpo::uno::Type const& type, void const* value)
 {
     switch (type.getTypeClass())
     {
@@ -612,7 +612,7 @@ void appendUnoAsJson(OStringBuffer& buf, cpo::uno::Type const& type, void const*
     }
 }
 
-cpo::uno::Any parseJsonToAny(OUString const& json, cpo::uno::Type const& type)
+cpo::uno::Any comphelper::parseJsonToAny(OUString const& json, cpo::uno::Type const& type)
 {
     switch (type.getTypeClass())
     {
@@ -928,6 +928,35 @@ cpo::uno::Any parseJsonToAny(OUString const& json, cpo::uno::Type const& type)
         default:
             O3TL_UNREACHABLE;
     }
+}
+
+cpo::uno::Any comphelper::parseJsonToInferredAny(OUString const & json) {
+    if (json == u"null") {
+        return {};
+    } else if (json == u"false") {
+        return cpo::uno::Any(false);
+    } else if (json == u"true") {
+        return cpo::uno::Any(true);
+    } else if (json.startsWith("[")) {
+        std::vector<OUString> elems;
+        if (splitJsonArray(json, elems)) {
+            cpo::uno::Sequence<cpo::uno::Any> s(elems.size());
+            auto const p = s.getArray();
+            for (std::size_t i = 0; i != elems.size(); ++i) {
+                p[i] = comphelper::parseJsonToInferredAny(elems[i]);
+            }
+            return cpo::uno::Any(s);
+        }
+    } else if (json.startsWith("{")) {
+        throw css::uno::RuntimeException(u"parseJsonToInferredAny cannot parse JSON objects"_ustr);
+    } else if (json.startsWith("\"")) {
+        if (auto const v = parseJsonStringValue(json)) {
+            return cpo::uno::Any(*v);
+        }
+    } else if (auto const v = parseJsonNumberAs<double>(json)) {
+        return cpo::uno::Any(*v);
+    }
+    throw css::uno::RuntimeException("malformed parseJsonToInferredAny input: " + json);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab cinoptions=b1,g0,N-s cinkeys+=0=break: */

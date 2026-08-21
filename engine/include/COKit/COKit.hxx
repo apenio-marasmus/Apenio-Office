@@ -1988,7 +1988,7 @@ struct COKitDocument
      *
      * The caller owns the returned string and frees it.
      */
-    virtual char* getCommandValues(const char* pCommand) = 0;
+    virtual std::string getCommandValues(const char* pCommand) = 0;
 
     /**
      * Save the client's view so that we can compute the right zoom level
@@ -2136,7 +2136,7 @@ struct COKitDocument
     virtual void postWindowExtTextInputEvent(unsigned nWindowId, COKitExtTextInputType eType,
                                              const char* pText) = 0;
 
-    virtual char* getPartInfo(int nPart) = 0;
+    virtual std::string getPartInfo(int nPart) = 0;
 
     /// Paints window with given id to the buffer with the give DPI scale
     /// (every pixel is dpiscale-times larger).

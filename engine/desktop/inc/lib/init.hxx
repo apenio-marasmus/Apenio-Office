@@ -324,7 +324,7 @@ namespace desktop {
         bool paste(const char* pMimeType, const char* pData, size_t nSize) override;
         void setGraphicSelection(COKitSetGraphicSelectionType eType, int nX, int nY) override;
         void resetSelection() override;
-        char* getCommandValues(const char* pCommand) override;
+        std::string getCommandValues(const char* pCommand) override;
         void setClientZoom(int nTilePixelWidth, int nTilePixelHeight, int nTileTwipWidth,
                            int nTileTwipHeight) override;
         void setClientVisibleArea(int nX, int nY, int nWidth, int nHeight) override;
@@ -350,7 +350,7 @@ namespace desktop {
         void setViewLanguage(int nId, const char* language) override;
         void postWindowExtTextInputEvent(unsigned nWindowId, COKitExtTextInputType eType,
                                          const char* pText) override;
-        char* getPartInfo(int nPart) override;
+        std::string getPartInfo(int nPart) override;
         void paintWindowDPI(unsigned nWindowId, unsigned char* pBuffer, const int x, const int y,
                             const int width, const int height, const double dpiscale) override;
         bool insertCertificate(const unsigned char* pCertificateBinary,
